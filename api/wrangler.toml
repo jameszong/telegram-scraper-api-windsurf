@@ -1,0 +1,23 @@
+name = "telegram-archiver-api"
+main = "api/src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "telegram-archiver-api"
+
+# D1 Database Configuration
+[[d1_databases]]
+binding = "DB"
+database_name = "tg-archive-db"
+database_id = "78d5f1bc-52ca-4aab-98c1-6e2a09f91c40"
+
+# R2 Bucket Configuration
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "tg-archive-bucket"
+
+# Environment Variables
+[vars]
+TELEGRAM_API_ID = "6"
+TELEGRAM_API_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
