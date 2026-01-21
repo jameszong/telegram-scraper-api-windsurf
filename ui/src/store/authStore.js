@@ -1,7 +1,5 @@
 import { create } from 'zustand';
-
-// Use environment variable if available, otherwise fallback (for local dev)
-const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+import { API_BASE, authenticatedFetch } from '../utils/api';
 
 export const useAuthStore = create((set, get) => ({
   // State
@@ -11,6 +9,7 @@ export const useAuthStore = create((set, get) => ({
   sessionString: null,
   phoneCodeHash: null,
   requires2FA: false,
+  tempSessionString: null, // Store session from send-code
   
   // Actions
   setLoading: (loading) => set({ isLoading: loading }),
@@ -30,20 +29,21 @@ export const useAuthStore = create((set, get) => ({
     sessionString: null,
     error: null,
     requires2FA: false,
-    phoneCodeHash: null
+    phoneCodeHash: null,
+    tempSessionString: null
   }),
   
   setPhoneCodeHash: (phoneCodeHash) => set({ phoneCodeHash }),
   setRequires2FA: (requires2FA) => set({ requires2FA }),
+  setTempSessionString: (tempSessionString) => set({ tempSessionString }),
   
   // API Actions
   startAuth: async (phoneNumber) => {
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
+      const response = await authenticatedFetch(`${API_BASE}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phoneNumber })
       });
       
@@ -52,6 +52,7 @@ export const useAuthStore = create((set, get) => ({
       if (data.success) {
         set({ 
           phoneCodeHash: data.phoneCodeHash,
+          tempSessionString: data.sessionString,
           requires2FA: false,
           isLoading: false 
         });
@@ -73,15 +74,14 @@ export const useAuthStore = create((set, get) => ({
   },
   
   verifyCode: async (phoneNumber, phoneCode) => {
-    const { phoneCodeHash } = get();
+    const { phoneCodeHash, tempSessionString } = get();
     
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch(`${API_BASE}/auth/verify`, {
+      const response = await authenticatedFetch(`${API_BASE}/auth/verify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber, phoneCode, phoneCodeHash })
+        body: JSON.stringify({ phoneNumber, phoneCode, phoneCodeHash, sessionString: tempSessionString })
       });
       
       const data = await response.json();
@@ -91,6 +91,7 @@ export const useAuthStore = create((set, get) => ({
           isLoggedIn: true,
           sessionString: data.sessionString,
           phoneCodeHash: null,
+          tempSessionString: null,
           isLoading: false 
         });
         return { success: true };
@@ -120,9 +121,8 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch(`${API_BASE}/auth/verify2fa`, {
+      const response = await authenticatedFetch(`${API_BASE}/auth/verify2fa`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })
       });
       
@@ -133,6 +133,7 @@ export const useAuthStore = create((set, get) => ({
           isLoggedIn: true,
           sessionString: data.sessionString,
           requires2FA: false,
+          tempSessionString: null,
           isLoading: false 
         });
         return { success: true };

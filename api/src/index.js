@@ -6,11 +6,35 @@ import { SyncService } from './sync.js';
 
 const app = new Hono();
 
+// Access key middleware
+const accessKeyMiddleware = async (c, next) => {
+  const accessKey = c.req.header('X-Access-Key');
+  const expectedKey = c.env.ACCESS_KEY;
+  
+  // Skip access key check for health check
+  if (c.req.path === '/' && c.req.method === 'GET') {
+    await next();
+    return;
+  }
+  
+  if (!accessKey || accessKey !== expectedKey) {
+    return c.json({ 
+      success: false, 
+      error: 'Unauthorized - Invalid or missing access key' 
+    }, 401);
+  }
+  
+  await next();
+};
+
+// Apply access key middleware to all routes except health check
+app.use('/*', accessKeyMiddleware);
+
 // CORS middleware
 app.use('/*', cors({
   origin: '*', 
   allowMethods: ['POST', 'GET', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Access-Key'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
   credentials: true,
@@ -43,14 +67,14 @@ app.post('/auth/login', async (c) => {
 });
 
 app.post('/auth/verify', async (c) => {
-  const { phoneNumber, phoneCode, phoneCodeHash } = await c.req.json();
+  const { phoneNumber, phoneCode, phoneCodeHash, sessionString } = await c.req.json();
   const authService = c.get('authService');
   
-  if (!phoneNumber || !phoneCode || !phoneCodeHash) {
+  if (!phoneNumber || !phoneCode || !phoneCodeHash || !sessionString) {
     return c.json({ success: false, error: 'All fields are required' }, 400);
   }
 
-  const result = await authService.verifyCode(phoneNumber, phoneCode, phoneCodeHash);
+  const result = await authService.verifyCode(phoneNumber, phoneCode, phoneCodeHash, sessionString);
   return c.json(result);
 });
 

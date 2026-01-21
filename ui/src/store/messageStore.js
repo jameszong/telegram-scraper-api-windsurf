@@ -1,7 +1,5 @@
 import { create } from 'zustand';
-
-// Use environment variable if available, otherwise fallback (for local dev)
-const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+import { API_BASE, authenticatedFetch } from '../utils/api';
 
 export const useMessageStore = create((set, get) => ({
   // State
@@ -35,7 +33,7 @@ export const useMessageStore = create((set, get) => ({
     
     try {
       const currentOffset = reset ? 0 : offset;
-      const response = await fetch(`${API_BASE}/messages?limit=${limit}&offset=${currentOffset}`);
+      const response = await authenticatedFetch(`${API_BASE}/messages?limit=${limit}&offset=${currentOffset}`);
       const data = await response.json();
       
       if (data.success) {
@@ -79,9 +77,8 @@ export const useMessageStore = create((set, get) => ({
     set({ isSyncing: true, error: null });
     
     try {
-      const response = await fetch(`${API_BASE}/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+      const response = await authenticatedFetch(`${API_BASE}/sync`, {
+        method: 'POST'
       });
       
       const data = await response.json();

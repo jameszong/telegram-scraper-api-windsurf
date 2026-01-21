@@ -19,5 +19,6 @@ bucket_name = "tg-archive-bucket"
 
 # Environment Variables
 [vars]
-TELEGRAM_API_ID = "6"
-TELEGRAM_API_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+# TELEGRAM_API_ID and TELEGRAM_API_HASH should be set as secrets in Cloudflare dashboard
+# These are placeholder values - replace with your actual credentials
+ACCESS_KEY = "your-32-character-access-key-here"
