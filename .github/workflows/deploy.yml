@@ -43,6 +43,12 @@ jobs:
           TELEGRAM_API_HASH
           ACCESS_KEY
         command: deploy
+      env:
+        # --- ADD THESE LINES ---
+        TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+        TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        # -----------------------
 
   deploy-frontend:
     name: Deploy Frontend (Cloudflare Pages)
