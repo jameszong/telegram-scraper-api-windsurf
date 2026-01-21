@@ -16,9 +16,3 @@ database_id = "78d5f1bc-52ca-4aab-98c1-6e2a09f91c40"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "tg-archive-bucket"
-
-# Environment Variables
-[vars]
-# TELEGRAM_API_ID and TELEGRAM_API_HASH should be set as secrets in Cloudflare dashboard
-# These are placeholder values - replace with your actual credentials
-ACCESS_KEY = "your-32-character-access-key-here"
