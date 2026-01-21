@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "api",
   "version": "0.0.1",
   "private": true,
@@ -13,6 +13,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
-    "wrangler": "^3.99.0"
+    "wrangler": "^4.59.3"
   }
 }
