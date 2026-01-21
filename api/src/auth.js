@@ -49,6 +49,9 @@ export class TelegramAuthService {
       const client = await this.getClient();
       await client.connect();
       
+      // Debug logging
+      console.log('Client type:', typeof client, 'Has signIn:', typeof client.signIn);
+      
       const result = await client.signIn({
         apiId: this.apiId,
         apiHash: this.apiHash,
