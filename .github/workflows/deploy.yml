@@ -29,7 +29,8 @@ jobs:
       with:
         apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        command: deploy --workspace=api
+        workingDirectory: 'api'
+        command: deploy
 
   deploy-frontend:
     name: Deploy Frontend (Cloudflare Pages)
