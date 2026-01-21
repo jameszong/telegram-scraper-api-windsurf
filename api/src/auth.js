@@ -100,7 +100,7 @@ export class TelegramAuthService {
       }
 
       const session = new StringSession(sessionString);
-      const client = new TelegramClient(session, this.apiId, this.apiHash);
+      const client = await this.getClient();
       await client.connect();
       
       await client.signInWithPassword({
