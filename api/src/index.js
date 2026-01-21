@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
 import { TelegramAuthService } from './auth.js';
 import { ChannelsService } from './channels.js';
 import { SyncService } from './sync.js';
@@ -69,15 +71,65 @@ app.post('/auth/login', async (c) => {
 });
 
 app.post('/auth/verify', async (c) => {
-  const { phoneNumber, phoneCode, phoneCodeHash, sessionString } = await c.req.json();
-  const authService = c.get('authService');
+  // 1. Extract inputs
+  const { phone, code, phoneCodeHash, session } = await c.req.json();
   
-  if (!phoneNumber || !phoneCode || !phoneCodeHash || !sessionString) {
+  console.log('Debug: Starting Verify. Phone:', phone, 'Hash:', phoneCodeHash, 'Session Length:', session ? session.length : 'N/A');
+  
+  if (!phone || !code || !phoneCodeHash || !session) {
     return c.json({ success: false, error: 'All fields are required' }, 400);
   }
 
-  const result = await authService.verifyCode(phoneNumber, phoneCode, phoneCodeHash, sessionString);
-  return c.json(result);
+  try {
+    // 2. Reconstruct Client (STATELESS)
+    // We MUST use the session string from step 1 to resurrect the client
+    const stringSession = new StringSession(session || ""); 
+    const client = new TelegramClient(stringSession, Number(c.env.TELEGRAM_API_ID), c.env.TELEGRAM_API_HASH, {
+        connectionRetries: 5,
+    });
+
+    // 3. CRITICAL DEBUGGING
+    console.log('Debug: Client created. Is instance?', client instanceof TelegramClient);
+    
+    // 4. CRITICAL: AWAIT CONNECT
+    console.log('Debug: Connecting...');
+    await client.connect(); 
+    console.log('Debug: Connected!');
+
+    // 5. SIGN IN
+    // Ensure phoneCodeHash is passed correctly
+    console.log('Debug: Attempting SignIn...');
+    const result = await client.signIn({
+        phoneNumber: phone,
+        phoneCodeHash: phoneCodeHash,
+        phoneCode: code,
+    });
+    
+    if (result) {
+      const finalSessionString = client.session.save();
+      
+      // Save final authenticated session to D1
+      await c.env.DB.prepare(
+        'INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)'
+      ).bind('session_string', finalSessionString).run();
+
+      await client.disconnect();
+
+      return c.json({
+        success: true,
+        sessionString: finalSessionString,
+        message: 'Authentication successful'
+      });
+    }
+    
+    await client.disconnect();
+    return c.json({ success: false, error: 'Authentication failed' });
+    
+  } catch (e) {
+    console.error('CRITICAL ERROR inside verify:', e);
+    console.error('Error Stack:', e.stack);
+    return c.json({ error: e.message, stack: e.stack }, 500);
+  }
 });
 
 // Channels routes
