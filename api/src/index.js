@@ -7,7 +7,14 @@ import { SyncService } from './sync.js';
 const app = new Hono();
 
 // CORS middleware
-app.use('/*', cors());
+app.use('/*', cors({
+  origin: '*', 
+  allowMethods: ['POST', 'GET', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 600,
+  credentials: true,
+}));
 
 // Initialize services
 app.use('/*', async (c, next) => {

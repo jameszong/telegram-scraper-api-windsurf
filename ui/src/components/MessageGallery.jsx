@@ -5,6 +5,9 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Loader2, Image, FileText, Calendar, MessageSquare, Download } from 'lucide-react';
 
+// Use environment variable if available, otherwise fallback (for local dev)
+const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+
 export const MessageGallery = () => {
   const { 
     messages, 
@@ -38,7 +41,7 @@ export const MessageGallery = () => {
   const renderMedia = (message) => {
     if (!message.r2_key) return null;
     
-    const mediaUrl = `/media/${message.r2_key}`;
+    const mediaUrl = `${API_BASE}/media/${message.r2_key}`;
     
     if (message.file_type === 'photo') {
       return (

@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 
+// Use environment variable if available, otherwise fallback (for local dev)
+const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+
 export const useAuthStore = create((set, get) => ({
   // State
   isLoggedIn: false,
@@ -38,7 +41,7 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch('/auth/login', {
+      const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phoneNumber })
@@ -75,7 +78,7 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch('/auth/verify', {
+      const response = await fetch(`${API_BASE}/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phoneNumber, phoneCode, phoneCodeHash })
@@ -117,7 +120,7 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch('/auth/verify2fa', {
+      const response = await fetch(`${API_BASE}/auth/verify2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })

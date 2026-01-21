@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 
+// Use environment variable if available, otherwise fallback (for local dev)
+const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+
 export const useChannelStore = create((set, get) => ({
   // State
   channels: [],
@@ -20,7 +23,7 @@ export const useChannelStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch('/channels');
+      const response = await fetch(`${API_BASE}/channels`);
       const data = await response.json();
       
       if (data.success) {
@@ -49,7 +52,7 @@ export const useChannelStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
-      const response = await fetch('/channels/select', {
+      const response = await fetch(`${API_BASE}/channels/select`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channelId })

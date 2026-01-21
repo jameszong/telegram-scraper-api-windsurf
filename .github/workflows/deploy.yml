@@ -53,8 +53,10 @@ jobs:
     - name: Install dependencies
       run: npm install
       
-    - name: Build frontend
+    - name: Build Frontend
       run: npm run build --workspace=ui
+      env:
+        VITE_API_URL: ${{ vars.VITE_API_URL }}
       
     - name: Deploy to Cloudflare Pages
       uses: cloudflare/pages-action@v1
