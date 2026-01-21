@@ -6,16 +6,31 @@ import { SyncService } from './sync.js';
 
 const app = new Hono();
 
-// Access key middleware
-const accessKeyMiddleware = async (c, next) => {
-  const accessKey = c.req.header('X-Access-Key');
-  const expectedKey = c.env.ACCESS_KEY;
+// STEP 1: CORS Middleware (MUST BE FIRST)
+app.use('/*', cors({
+  origin: '*', 
+  allowMethods: ['POST', 'GET', 'OPTIONS', 'PUT', 'DELETE'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Access-Key'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 600,
+  credentials: true,
+}));
+
+// STEP 2: Access Key Middleware (AFTER CORS)
+app.use('/*', async (c, next) => {
+  // Skip check for OPTIONS requests (Preflight)
+  if (c.req.method === 'OPTIONS') {
+    return next();
+  }
   
   // Skip access key check for health check
   if (c.req.path === '/' && c.req.method === 'GET') {
     await next();
     return;
   }
+  
+  const accessKey = c.req.header('X-Access-Key');
+  const expectedKey = c.env.ACCESS_KEY;
   
   if (!accessKey || accessKey !== expectedKey) {
     return c.json({ 
@@ -25,20 +40,7 @@ const accessKeyMiddleware = async (c, next) => {
   }
   
   await next();
-};
-
-// Apply access key middleware to all routes except health check
-app.use('/*', accessKeyMiddleware);
-
-// CORS middleware
-app.use('/*', cors({
-  origin: '*', 
-  allowMethods: ['POST', 'GET', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Access-Key'],
-  exposeHeaders: ['Content-Length'],
-  maxAge: 600,
-  credentials: true,
-}));
+});
 
 // Initialize services
 app.use('/*', async (c, next) => {
