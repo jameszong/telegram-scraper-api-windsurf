@@ -1,5 +1,5 @@
 name = "telegram-archiver-api"
-main = "api/src/index.js"
+main = "src/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
