@@ -81,4 +81,4 @@ jobs:
       run: npm install
       
     - name: Apply D1 migrations
-      run: npm run d1:migrate
+      run: cd api && npx wrangler d1 migrations apply tg-archive-db --remote
