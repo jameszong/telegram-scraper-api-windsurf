@@ -19,9 +19,16 @@ export const MessageGallery = () => {
   
   const [loadingMore, setLoadingMore] = useState(false);
   
+  // CRITICAL: Filter system messages before any processing
+  const validMessages = messages.filter(msg => {
+    const text = msg.text || '';
+    return !text.startsWith('[Force Step') && 
+           !text.startsWith('[Service Message]');
+  });
+  
   // Debug: Log when messages change
   useEffect(() => {
-    console.log('Frontend: Messages updated:', messages.length);
+    console.log('Frontend: Messages updated:', messages.length, 'total, valid:', validMessages.length);
     if (messages.length > 0) {
       console.log('Frontend: First message keys:', Object.keys(messages[0]));
       console.log('Frontend: Sample message:', JSON.stringify(messages[0], null, 2));
@@ -32,19 +39,14 @@ export const MessageGallery = () => {
   
   // Group messages by grouped_id for album support
   const groupMessages = (rawMessages) => {
-    // CRITICAL: Filter out system placeholder messages
-    const validMessages = rawMessages.filter(msg => 
-      !msg.text?.startsWith('[Force Step') && 
-      !msg.text?.startsWith('[Service Message]')
-    );
-    
-    console.log('Frontend: Starting message grouping with', validMessages.length, 'valid messages (filtered from', rawMessages.length, 'total)');
+    // Messages are already filtered at component level
+    console.log('Frontend: Starting message grouping with', rawMessages.length, 'valid messages');
     
     const groups = {};
     const result = [];
     
     // Sort messages by date first
-    const sortedMessages = [...validMessages].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedMessages = [...rawMessages].sort((a, b) => new Date(a.date) - new Date(b.date));
     
     for (const message of sortedMessages) {
       const groupId = message.grouped_id;
@@ -99,7 +101,7 @@ export const MessageGallery = () => {
     return finalResult;
   };
   
-  const groupedMessages = groupMessages(messages);
+  const groupedMessages = groupMessages(validMessages);
   
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
@@ -217,10 +219,10 @@ export const MessageGallery = () => {
           )}
           
           {/* End of Archive */}
-          {!hasMore && messages.length > 0 && (
+          {!hasMore && validMessages.length > 0 && (
             <div className="text-center py-8">
               <p className="text-[#8b92a8] text-sm">
-                End of archive • {messages.length} messages total
+                End of archive • {validMessages.length} messages total
               </p>
             </div>
           )}

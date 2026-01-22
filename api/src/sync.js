@@ -68,9 +68,10 @@ export class SyncService {
 
       if (rawLastId > 0) {
         // Update case: Fetch messages newer than known
-        fetchOptions.min_id = lastIdBigInt;    // Pass BigInt
-        fetchOptions.offset_id = lastIdBigInt; // Pass as offset_id too for safety
-        console.log(`Debug: Fetching > ${lastIdBigInt} (Type: BigInt) with BigInt channel ${channelBigInt}`);
+        fetchOptions.min_id = lastIdBigInt;    // Primary filter
+        fetchOptions.offset_id = lastIdBigInt; // Backup filter (Critical for some channels)
+        fetchOptions.add_offset = 0;          // Explicitly set to 0
+        console.log(`Debug: Fetching history > ${lastIdBigInt} (BigInt) with dual filters`);
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
