@@ -72,10 +72,14 @@ export class SyncService {
 
           // Handle media if present
           if (message.media && message.media.className !== 'MessageMediaWebPage') {
-            const mediaResult = await this.handleMedia(message, client);
+            console.log(`Debug: Processing media for message ${message.id}...`);
+            const mediaResult = await this.handleMedia(message, client, targetChannelId);
             if (mediaResult.success) {
               messageData.media = mediaResult.mediaData;
               mediaCount++;
+              console.log(`Debug: Successfully processed media for message ${message.id}`);
+            } else {
+              console.log(`Debug: Failed to process media for message ${message.id}: ${mediaResult.error}`);
             }
           }
 
@@ -105,13 +109,16 @@ export class SyncService {
     }
   }
 
-  async handleMedia(message, client) {
+  async handleMedia(message, client, targetChannelId) {
     try {
       let mediaData = null;
       let buffer = null;
 
+      console.log(`Debug: Media type: ${message.media.className}`);
+
       // Handle different media types
       if (message.photo) {
+        console.log(`Debug: Downloading photo for message ${message.id}...`);
         const photo = message.photo;
         const size = photo.sizes[photo.sizes.length - 1]; // Get largest size
         
@@ -128,6 +135,7 @@ export class SyncService {
           height: size.h
         };
       } else if (message.document) {
+        console.log(`Debug: Downloading document for message ${message.id}...`);
         const document = message.document;
         
         buffer = await client.downloadMedia(message, {
@@ -143,6 +151,9 @@ export class SyncService {
           mime_type: document.mimeType || 'application/octet-stream',
           fileName: document.fileName
         };
+      } else {
+        console.log(`Debug: Unsupported media type for message ${message.id}: ${message.media.className}`);
+        return { success: false, error: 'Unsupported media type' };
       }
 
       if (buffer && mediaData) {
@@ -150,6 +161,8 @@ export class SyncService {
         const chatIdStr = message.chatId ? message.chatId.toString() : targetChannelId.toString();
         const messageIdStr = message.id.toString();
         const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${mediaData.extension}`;
+        
+        console.log(`Debug: Uploading to R2: ${key} (${buffer.length} bytes)`);
         
         // Upload to R2
         await this.env.BUCKET.put(key, buffer, {
@@ -159,13 +172,14 @@ export class SyncService {
         });
 
         mediaData.r2_key = key;
+        console.log(`Debug: Successfully uploaded to R2: ${key}`);
         
         return { success: true, mediaData };
       }
 
-      return { success: false, error: 'Unsupported media type' };
+      return { success: false, error: 'No buffer or media data' };
     } catch (error) {
-      console.error('Media handling error:', error);
+      console.error(`Error processing media for message ${message.id}:`, error);
       return { success: false, error: error.message };
     }
   }
