@@ -30,7 +30,7 @@ export const LoginPage = () => {
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     clearError();
-    await verifyCode(phoneNumber, verificationCode);
+    await verifyCode(verificationCode);
   };
   
   const handleVerify2FA = async (e) => {

@@ -10,6 +10,7 @@ export const useAuthStore = create((set, get) => ({
   phoneCodeHash: null,
   requires2FA: false,
   tempSessionString: null, // Store session from send-code
+  phoneNumber: null, // Store phone number for verification
   
   // Actions
   setLoading: (loading) => set({ isLoading: loading }),
@@ -21,7 +22,8 @@ export const useAuthStore = create((set, get) => ({
     sessionString,
     error: null,
     requires2FA: false,
-    phoneCodeHash: null
+    phoneCodeHash: null,
+    phoneNumber: null
   }),
   
   logout: () => set({ 
@@ -30,7 +32,8 @@ export const useAuthStore = create((set, get) => ({
     error: null,
     requires2FA: false,
     phoneCodeHash: null,
-    tempSessionString: null
+    tempSessionString: null,
+    phoneNumber: null
   }),
   
   setPhoneCodeHash: (phoneCodeHash) => set({ phoneCodeHash }),
@@ -51,6 +54,7 @@ export const useAuthStore = create((set, get) => ({
       
       if (data.success) {
         set({ 
+          phoneNumber, // Save phone number for verification
           phoneCodeHash: data.phoneCodeHash,
           tempSessionString: data.sessionString,
           requires2FA: false,
@@ -73,15 +77,20 @@ export const useAuthStore = create((set, get) => ({
     }
   },
   
-  verifyCode: async (phoneNumber, phoneCode) => {
-    const { phoneCodeHash, tempSessionString } = get();
+  verifyCode: async (phoneCode) => {
+    const { phoneNumber, phoneCodeHash, tempSessionString } = get();
     
     set({ isLoading: true, error: null });
     
     try {
       const response = await authenticatedFetch(`${API_BASE}/auth/verify`, {
         method: 'POST',
-        body: JSON.stringify({ phoneNumber, phoneCode, phoneCodeHash, sessionString: tempSessionString })
+        body: JSON.stringify({ 
+          phone: phoneNumber,           // Use 'phone' as expected by backend
+          code: phoneCode,             // Use 'code' as expected by backend
+          phoneCodeHash,
+          session: tempSessionString   // Use 'session' as expected by backend
+        })
       });
       
       const data = await response.json();
@@ -92,6 +101,7 @@ export const useAuthStore = create((set, get) => ({
           sessionString: data.sessionString,
           phoneCodeHash: null,
           tempSessionString: null,
+          phoneNumber: null, // Clear phone number after successful verification
           isLoading: false 
         });
         return { success: true };
