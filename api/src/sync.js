@@ -71,24 +71,24 @@ export class SyncService {
 
       // Use GramJS Iterator (The Mature Framework Approach)
       const messages = [];
-      const limitNum = 20; // Reduced to 20 to ensure Worker completes within 30s limit
+      const limitNum = 30; // Increased back to 30 for reverse: false stability
       try {
-        console.log(`Debug: Fetching > ${lastIdBigInt} (Type: ${typeof lastIdBigInt}, Limit: ${limitNum})`);
+        console.log(`Debug: Fetching NEWEST messages down to min_id: ${lastIdBigInt} (Reverse: False)`);
         for await (const message of client.iterMessages(channelBigInt, {
-          limit: limitNum,       // Number (Rule #3: at least 20 for safety, reduced for timeout)
-          min_id: lastIdBigInt,  // BigInt (Rule #3: ONLY use min_id)
-          reverse: true,         // Rule #3: MUST set reverse: true
-          // Rule #3: NO offset_id parameter - forbidden with reverse: true
+          limit: limitNum,       // Number
+          reverse: false,         // CRITICAL CHANGE: Fetch from Top (Newest -> Oldest)
+          min_id: lastIdBigInt,   // Stop when we hit what we already have
+          // NO offset_id - Start from top of channel naturally
         })) {
           // Double-check to ensure API respected minId
           // message.id is already BigInt from GramJS, just compare directly
           if (message.id <= lastIdBigInt) {
-            console.log(`Debug: Skipping old message ${message.id} (Expected > ${lastIdBigInt})`);
-            continue; 
+            console.log(`Debug: Stopping at message ${message.id} (Reached min_id: ${lastIdBigInt})`);
+            break; // Stop iterator when we hit known history
           }
           messages.push(message);
         }
-        console.log(`Debug: Fetched ${messages.length} messages`);
+        console.log(`Debug: Fetched ${messages.length} messages (Newest -> Oldest)`);
       } catch (e) {
         console.error("GramJS Iterator Error:", e);
         await client.disconnect();
@@ -99,9 +99,15 @@ export class SyncService {
 
       let syncedCount = 0;
       let mediaCount = 0;
+      let maxIdInBatch = lastIdBigInt; // Track maximum ID seen in this batch (for reverse: false)
 
       // Process Messages (Standard Loop) - No more stuck detection needed
       for (const message of messages) {
+        // Track the maximum ID we've seen (newest message)
+        if (message.id > maxIdInBatch) {
+          maxIdInBatch = message.id;
+        }
+        
         if (message.text || message.media) {
           // Convert BigInt IDs to strings to avoid JSON serialization issues
           const messageData = {
