@@ -1,6 +1,12 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 
+// Helper to prevent BigInt crashes on null/undefined
+const safeBigInt = (val) => {
+  if (val === null || val === undefined) return 0n;
+  return BigInt(val);
+};
+
 export class SyncService {
   constructor(env) {
     this.env = env;
@@ -39,7 +45,7 @@ export class SyncService {
       await client.connect();
 
       // Get channel entity - CRITICAL: Use BigInt for GramJS, but only if channelId exists
-      const channelBigInt = BigInt(channelIdStr);
+      const channelBigInt = safeBigInt(channelIdStr);
       const channel = await client.getEntity(channelBigInt);
       
       // Get last message ID from our database to avoid duplicates
@@ -54,7 +60,7 @@ export class SyncService {
       console.log(`Debug: DB Last ID for ${channelIdStr} is: ${rawLastId} (Type: ${typeof rawLastId}), fetching from Telegram...`);
       
       // CRITICAL: Use robust fetching strategy with proper types
-      const lastIdBigInt = BigInt(rawLastId); // Now safe (BigInt(0) works, BigInt(null) fails)
+      const lastIdBigInt = safeBigInt(rawLastId); // Now safe with helper function)
       let fetchOptions = {
         limit: 5,        // Can safely increase to 5 now with BigInt fix
         reverse: true,   // Fetch Oldest -> Newest
