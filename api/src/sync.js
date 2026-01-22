@@ -31,7 +31,9 @@ export class SyncService {
         return { success: false, error: 'No target channel selected' };
       }
 
-      console.log(`Debug: Starting sync for channel ${targetChannelId}`);
+      // CRITICAL: Ensure channelId is string and log type for debugging
+      const channelIdStr = String(targetChannelId);
+      console.log(`Debug: Starting sync for channel ${channelIdStr} (Type: ${typeof channelIdStr})`);
 
       const client = await this.getClient();
       await client.connect();
@@ -41,12 +43,12 @@ export class SyncService {
       
       // Get last message ID from our database to avoid duplicates
       const lastMessage = await this.env.DB.prepare(
-        'SELECT MAX(telegram_message_id) as telegram_message_id FROM messages WHERE chat_id = ?'
-      ).bind(targetChannelId).first();
+        'SELECT MAX(CAST(telegram_message_id AS INTEGER)) as telegram_message_id FROM messages WHERE chat_id = ?'
+      ).bind(channelIdStr).first();
 
       const lastId = lastMessage ? lastMessage.telegram_message_id : 0;
       
-      console.log(`Debug: Oldest message ID in DB: ${lastId}, fetching from Telegram...`);
+      console.log(`Debug: DB Last ID for ${channelIdStr} is: ${lastId} (Type: ${typeof lastId}), fetching from Telegram...`);
       
       // CRITICAL: Use robust fetching strategy
       let fetchOptions = {
@@ -68,7 +70,7 @@ export class SyncService {
 
       console.log(`Debug: Got message ID: ${messages[0]?.id}, Total: ${messages.length}`);
 
-      console.log(`Debug: Fetched ${messages.length} messages for channel ${targetChannelId}`);
+      console.log(`Debug: Fetched ${messages.length} messages for channel ${channelIdStr}`);
 
       let syncedCount = 0;
       let mediaCount = 0;
@@ -78,7 +80,7 @@ export class SyncService {
           // Convert BigInt IDs to strings to avoid JSON serialization issues
           const messageData = {
             telegram_message_id: message.id.toString(), // Convert BigInt to string
-            chat_id: message.chatId ? message.chatId.toString() : targetChannelId.toString(), // Convert BigInt to string
+            chat_id: channelIdStr, // CRITICAL: Use the string channelId consistently
             text: message.text || '',
             date: new Date(message.date * 1000).toISOString(),
             grouped_id: message.groupedId ? message.groupedId.toString() : null, // Add grouped_id for album support
@@ -113,7 +115,7 @@ export class SyncService {
           console.log(`Debug: Saving service message ${message.id} as placeholder to prevent infinite loop`);
           const placeholderData = {
             telegram_message_id: message.id.toString(),
-            chat_id: message.chatId ? message.chatId.toString() : targetChannelId.toString(),
+            chat_id: channelIdStr, // CRITICAL: Use the consistent string channelId
             text: '[Service Message]',
             date: new Date(message.date * 1000).toISOString(),
             grouped_id: null,
@@ -320,7 +322,8 @@ export class SyncService {
         'SELECT value FROM kv_store WHERE key = ?'
       ).bind('target_channel_id').first();
       
-      return result ? parseInt(result.value) : null;
+      // CRITICAL: Ensure channelId is always a string to match DB column type
+      return result ? String(result.value) : null;
     } catch (error) {
       console.error('Error getting target channel:', error);
       return null;
