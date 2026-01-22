@@ -73,11 +73,11 @@ export class SyncService {
       const messages = [];
       const limitNum = 5; // Ensure this is a Number, NOT BigInt
       try {
-        console.log(`Debug: Fetching history > ${lastIdBigInt} (min_id only, reverse=false for newer messages)`);
+        console.log(`Debug: Fetching history > ${lastIdBigInt} (min_id only, reverse=true)`);
         for await (const message of client.iterMessages(channelBigInt, {
           limit: limitNum,       // Number
-          min_id: lastIdBigInt,  // BigInt (fetch messages with ID > lastIdBigInt)
-          reverse: false,        // Fetch newer messages (newest -> oldest)
+          min_id: lastIdBigInt,  // BigInt (ONLY use min_id for "newer than" logic)
+          reverse: true,         // Keep reverse: true as requested
         })) {
           // Double-check to ensure API respected minId
           // message.id is already BigInt from GramJS, just compare directly
