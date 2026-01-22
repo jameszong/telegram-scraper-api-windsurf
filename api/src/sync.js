@@ -74,6 +74,11 @@ export class SyncService {
           minId: lastIdBigInt,   // Iterator handles the "newer than" logic reliably
           reverse: true,         // Iterate chronologically (Oldest -> Newest)
         })) {
+          // Double-check to ensure API respected minId
+          if (toBigInt(message.id) <= lastIdBigInt) {
+            console.log(`Debug: Skipping old message ${message.id} (Expected > ${lastIdBigInt})`);
+            continue; 
+          }
           messages.push(message);
         }
       } catch (e) {
