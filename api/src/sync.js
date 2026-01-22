@@ -211,6 +211,7 @@ export class SyncService {
 
       if (buffer && mediaData) {
         // Generate unique key for R2
+        // message.chatId and message.id are already BigInt from GramJS
         const chatIdStr = message.chatId ? message.chatId.toString() : targetChannelId.toString();
         const messageIdStr = message.id.toString();
         const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${mediaData.extension}`;

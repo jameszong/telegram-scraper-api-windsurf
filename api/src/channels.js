@@ -91,7 +91,8 @@ export class ChannelsService {
         'SELECT value FROM kv_store WHERE key = ?'
       ).bind('target_channel_id').first();
       
-      return result ? parseInt(result.value) : null;
+      // CRITICAL: Return as string to match DB column type and avoid BigInt issues
+      return result ? String(result.value) : null;
     } catch (error) {
       console.error('Error getting target channel:', error);
       return null;
