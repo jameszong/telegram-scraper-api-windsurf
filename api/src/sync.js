@@ -50,18 +50,18 @@ export class SyncService {
       
       // CRITICAL: Use robust fetching strategy
       let fetchOptions = {
-        limit: 5,        // Increase to 5 to skip potential deleted messages
+        limit: 2,        // REDUCE to 2 to prevent CPU exhaustion on media decryption
         reverse: true,   // Fetch Oldest -> Newest
       };
 
       if (lastId > 0) {
         // Update case: Fetch messages newer than known
         fetchOptions.min_id = lastId;
-        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 5)`);
+        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 2)`);
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
-        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 5)`);
+        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 2)`);
       }
 
       const messages = await client.getMessages(channel, fetchOptions);
@@ -185,6 +185,9 @@ export class SyncService {
             contentType: mediaData.mime_type
           }
         });
+
+        // CRITICAL: Free memory immediately after upload
+        buffer = null;
 
         mediaData.r2_key = key;
         console.log(`Debug: Successfully uploaded to R2: ${key}`);
