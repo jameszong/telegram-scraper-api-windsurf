@@ -50,18 +50,18 @@ export class SyncService {
       
       // CRITICAL: Use robust fetching strategy
       let fetchOptions = {
-        limit: 2,        // REDUCE to 2 to prevent CPU exhaustion on media decryption
+        limit: 5,        // INCREASE to 5 to skip initial service messages
         reverse: true,   // Fetch Oldest -> Newest
       };
 
       if (lastId > 0) {
         // Update case: Fetch messages newer than known
         fetchOptions.min_id = lastId;
-        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 2)`);
+        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 5)`);
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
-        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 2)`);
+        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 5)`);
       }
 
       const messages = await client.getMessages(channel, fetchOptions);
@@ -108,6 +108,9 @@ export class SyncService {
           if (result.success) {
             syncedCount++;
           }
+        } else {
+          // CRITICAL: Log skipped messages to debug infinite loop
+          console.log(`Debug: Skipping message ${message.id} (No text or media content)`);
         }
       }
 
