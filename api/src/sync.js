@@ -71,11 +71,11 @@ export class SyncService {
 
       // Use GramJS Iterator (The Mature Framework Approach)
       const messages = [];
-      const limitNum = 30; // Rule #3: Set limit to 30 to bridge gaps in message history
+      const limitNum = 20; // Reduced to 20 to ensure Worker completes within 30s limit
       try {
         console.log(`Debug: Fetching > ${lastIdBigInt} (Type: ${typeof lastIdBigInt}, Limit: ${limitNum})`);
         for await (const message of client.iterMessages(channelBigInt, {
-          limit: limitNum,       // Number (Rule #3: at least 20 for safety)
+          limit: limitNum,       // Number (Rule #3: at least 20 for safety, reduced for timeout)
           min_id: lastIdBigInt,  // BigInt (Rule #3: ONLY use min_id)
           reverse: true,         // Rule #3: MUST set reverse: true
           // Rule #3: NO offset_id parameter - forbidden with reverse: true
@@ -264,7 +264,7 @@ export class SyncService {
         messageData.text,
         messageData.date,
         messageData.grouped_id
-      ).run();
+      ).run(); // CRITICAL: Ensure database write is fully awaited
 
       // Debug: Log database write
       if (messageData.media) {

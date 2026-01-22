@@ -92,6 +92,7 @@ export const useMessageStore = create((set, get) => ({
       let totalSynced = 0;
       let totalMedia = 0;
       const maxBatches = 10;  // Sync up to 10 messages
+      let emptyBatches = 0;  // Track consecutive empty batches
       
       for (let i = 0; i < maxBatches; i++) {
         // Update progress
@@ -114,9 +115,26 @@ export const useMessageStore = create((set, get) => ({
           
           console.log(`Debug: Batch ${i + 1} result: synced=${data.synced}, media=${data.media}, hasNewMessages=${data.hasNewMessages}`);
           
-          // Stop if no new messages
+          // More resilient stopping logic
+          if (data.synced === 0) {
+            emptyBatches++;
+            console.log(`Debug: Empty batch ${i + 1}, consecutive empty: ${emptyBatches}`);
+            
+            // Only stop after 2 consecutive empty batches
+            if (emptyBatches >= 2) {
+              console.log(`Debug: Stopping after ${emptyBatches} consecutive empty batches`);
+              set({ 
+                syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.` 
+              });
+              break;
+            }
+          } else {
+            emptyBatches = 0; // Reset counter on successful batch
+          }
+          
+          // Also stop if API explicitly says no more messages
           if (!data.hasNewMessages) {
-            console.log(`Debug: No more messages to sync, stopping at batch ${i + 1}`);
+            console.log(`Debug: No more messages to sync (API confirmation), stopping at batch ${i + 1}`);
             set({ 
               syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.` 
             });
@@ -130,9 +148,6 @@ export const useMessageStore = create((set, get) => ({
           });
           break;
         }
-        
-        // Small delay to prevent overwhelming the worker
-        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       // Reset and fetch messages after sync
