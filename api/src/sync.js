@@ -72,6 +72,7 @@ export class SyncService {
             chat_id: message.chatId ? message.chatId.toString() : targetChannelId.toString(), // Convert BigInt to string
             text: message.text || '',
             date: new Date(message.date * 1000).toISOString(),
+            grouped_id: message.groupedId ? message.groupedId.toString() : null, // Add grouped_id for album support
             media: null
           };
 
@@ -193,13 +194,14 @@ export class SyncService {
     try {
       // Insert message into D1 (deduplication via UNIQUE constraint)
       const result = await this.env.DB.prepare(`
-        INSERT OR IGNORE INTO messages (telegram_message_id, chat_id, text, date)
-        VALUES (?, ?, ?, ?)
+        INSERT OR IGNORE INTO messages (telegram_message_id, chat_id, text, date, grouped_id)
+        VALUES (?, ?, ?, ?, ?)
       `).bind(
         messageData.telegram_message_id,
         messageData.chat_id,
         messageData.text,
-        messageData.date
+        messageData.date,
+        messageData.grouped_id
       ).run();
 
       if (result.changes > 0 && messageData.media) {
@@ -252,7 +254,7 @@ export class SyncService {
   async getArchivedMessages(limit = 50, offset = 0) {
     try {
       const messages = await this.env.DB.prepare(`
-        SELECT m.id, m.telegram_message_id, m.text, m.date, m.created_at,
+        SELECT m.id, m.telegram_message_id, m.text, m.date, m.created_at, m.grouped_id,
                md.r2_key, md.file_type, md.mime_type
         FROM messages m
         LEFT JOIN media md ON m.id = md.message_id

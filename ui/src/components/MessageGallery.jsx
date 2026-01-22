@@ -19,6 +19,59 @@ export const MessageGallery = () => {
   
   const [loadingMore, setLoadingMore] = useState(false);
   
+  // Group messages by grouped_id for album support
+  const groupMessages = (rawMessages) => {
+    const groups = {};
+    const result = [];
+    
+    // Sort messages by date first
+    const sortedMessages = [...rawMessages].sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    for (const message of sortedMessages) {
+      const groupId = message.grouped_id;
+      
+      if (groupId && groupId !== 'null') {
+        // This message belongs to a group
+        if (!groups[groupId]) {
+          groups[groupId] = {
+            id: groupId,
+            text: null,
+            media_keys: [],
+            date: message.date,
+            telegram_message_id: message.telegram_message_id
+          };
+        }
+        
+        // Add media key if exists
+        if (message.r2_key) {
+          groups[groupId].media_keys.push(message.r2_key);
+        }
+        
+        // Set text (caption) - usually from the first message with text
+        if (!groups[groupId].text && message.text) {
+          groups[groupId].text = message.text;
+        }
+      } else {
+        // This is a standalone message
+        result.push({
+          id: message.id,
+          text: message.text,
+          media_keys: message.r2_key ? [message.r2_key] : [],
+          date: message.date,
+          telegram_message_id: message.telegram_message_id
+        });
+      }
+    }
+    
+    // Add groups to result (sort by date)
+    const groupArray = Object.values(groups).sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Merge groups and standalone messages, then sort by date descending (newest first)
+    return [...groupArray, ...result].sort((a, b) => new Date(b.date) - new Date(a.date));
+  };
+  
+  const groupedMessages = groupMessages(messages);
+  
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
     
@@ -65,33 +118,40 @@ export const MessageGallery = () => {
         </Card>
       ) : (
         <div className="flex flex-col space-y-4 max-w-2xl mx-auto w-full">
-          {messages.map((message) => (
-            <div key={message.id} className="flex justify-start">
+          {groupedMessages.map((group) => (
+            <div key={group.id} className="flex justify-start">
               <div className="bg-[#182533] p-3 rounded-lg rounded-tl-none max-w-[80%] shadow-md border border-[#0e1621]">
                 
-                {/* Media Rendering */}
-                {message.r2_key && (
-                  <div className="mb-2 overflow-hidden rounded-lg">
-                    <img 
-                      src={`${API_BASE}/media/${message.r2_key}`} 
-                      alt="Attachment" 
-                      className="w-full h-auto block rounded-lg"
-                      loading="lazy"
-                    />
+                {/* Image Grid for Albums */}
+                {group.media_keys.length > 0 && (
+                  <div className={`grid gap-1 mb-2 ${
+                    group.media_keys.length === 1 ? 'grid-cols-1' : 
+                    group.media_keys.length === 2 ? 'grid-cols-2' : 
+                    'grid-cols-3'
+                  }`}>
+                    {group.media_keys.map((key, index) => (
+                      <img 
+                        key={`${key}-${index}`}
+                        src={`${API_BASE}/media/${key}`} 
+                        alt="Attachment" 
+                        className="object-cover w-full h-32 rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
+                        loading="lazy"
+                      />
+                    ))}
                   </div>
                 )}
 
                 {/* Text Rendering (Pre-wrap to keep newlines) */}
-                {message.text && (
+                {group.text && (
                   <p className="text-white text-[15px] whitespace-pre-wrap leading-snug break-words mb-2">
-                    {message.text}
+                    {group.text}
                   </p>
                 )}
 
                 {/* Footer: Date */}
                 <div className="text-right">
                   <span className="text-[#6c7883] text-xs">
-                    {formatTime(message.date)}
+                    {formatTime(group.date)}
                   </span>
                 </div>
               </div>
