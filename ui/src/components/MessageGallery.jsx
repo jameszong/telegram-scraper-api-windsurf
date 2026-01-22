@@ -32,13 +32,19 @@ export const MessageGallery = () => {
   
   // Group messages by grouped_id for album support
   const groupMessages = (rawMessages) => {
-    console.log('Frontend: Starting message grouping with', rawMessages.length, 'messages');
+    // CRITICAL: Filter out system placeholder messages
+    const validMessages = rawMessages.filter(msg => 
+      !msg.text?.startsWith('[Force Step') && 
+      !msg.text?.startsWith('[Service Message]')
+    );
+    
+    console.log('Frontend: Starting message grouping with', validMessages.length, 'valid messages (filtered from', rawMessages.length, 'total)');
     
     const groups = {};
     const result = [];
     
     // Sort messages by date first
-    const sortedMessages = [...rawMessages].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedMessages = [...validMessages].sort((a, b) => new Date(a.date) - new Date(b.date));
     
     for (const message of sortedMessages) {
       const groupId = message.grouped_id;
