@@ -173,6 +173,16 @@ app.get('/messages', async (c) => {
   const syncService = c.get('syncService');
   
   const result = await syncService.getArchivedMessages(limit, offset);
+  
+  // Debug: Log fetched data structure
+  console.log(`Debug: Fetched ${result.messages.length} messages from DB`);
+  if (result.messages.length > 0) {
+    console.log('Debug: Sample message structure:', JSON.stringify(result.messages[0], null, 2));
+    console.log('Debug: First message keys:', Object.keys(result.messages[0]));
+    console.log('Debug: Sample media_key:', result.messages[0].r2_key);
+    console.log('Debug: Sample grouped_id:', result.messages[0].grouped_id);
+  }
+  
   return c.json(result);
 });
 
@@ -183,15 +193,40 @@ app.post('/sync', async (c) => {
   return c.json(result);
 });
 
+// Debug routes
+app.get('/debug/schema', async (c) => {
+  try {
+    const messagesSchema = await c.env.DB.prepare("PRAGMA table_info(messages)").all();
+    const mediaSchema = await c.env.DB.prepare("PRAGMA table_info(media)").all();
+    
+    console.log('Debug: Messages table schema:', JSON.stringify(messagesSchema.results, null, 2));
+    console.log('Debug: Media table schema:', JSON.stringify(mediaSchema.results, null, 2));
+    
+    return c.json({
+      messages: messagesSchema.results,
+      media: mediaSchema.results
+    });
+  } catch (error) {
+    console.error('Debug: Schema query error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // Media routes - Allow keys with slashes
 app.get('/media/*', async (c) => {
   // Extract full path after /media/
   const key = c.req.path.replace('/media/', '');
   
+  console.log(`Debug: Media request - Key: "${key}"`);
+  console.log(`Debug: Media request - Full path: "${c.req.path}"`);
+  
   try {
     const object = await c.env.BUCKET.get(key);
     
+    console.log(`Debug: R2 object found: ${!!object}`);
+    
     if (!object) {
+      console.log(`Debug: Media not found for key: "${key}"`);
       return c.text('Not Found', 404);
     }
 
@@ -201,6 +236,7 @@ app.get('/media/*', async (c) => {
     // Important: Cache content to make images load fast
     headers.set('Cache-Control', 'public, max-age=31536000');
 
+    console.log(`Debug: Serving media with headers:`, Object.fromEntries(headers.entries()));
     return new Response(object.body, { headers });
   } catch (error) {
     console.error('Error serving media:', error);

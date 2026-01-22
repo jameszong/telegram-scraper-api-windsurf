@@ -19,8 +19,21 @@ export const MessageGallery = () => {
   
   const [loadingMore, setLoadingMore] = useState(false);
   
+  // Debug: Log when messages change
+  useEffect(() => {
+    console.log('Frontend: Messages updated:', messages.length);
+    if (messages.length > 0) {
+      console.log('Frontend: First message keys:', Object.keys(messages[0]));
+      console.log('Frontend: Sample message:', JSON.stringify(messages[0], null, 2));
+      console.log('Frontend: Sample r2_key:', messages[0].r2_key);
+      console.log('Frontend: Sample grouped_id:', messages[0].grouped_id);
+    }
+  }, [messages]);
+  
   // Group messages by grouped_id for album support
   const groupMessages = (rawMessages) => {
+    console.log('Frontend: Starting message grouping with', rawMessages.length, 'messages');
+    
     const groups = {};
     const result = [];
     
@@ -29,6 +42,8 @@ export const MessageGallery = () => {
     
     for (const message of sortedMessages) {
       const groupId = message.grouped_id;
+      
+      console.log(`Frontend: Processing message ${message.id}, grouped_id: ${groupId}, has media: ${!!message.r2_key}`);
       
       if (groupId && groupId !== 'null') {
         // This message belongs to a group
@@ -40,16 +55,19 @@ export const MessageGallery = () => {
             date: message.date,
             telegram_message_id: message.telegram_message_id
           };
+          console.log(`Frontend: Created new group ${groupId}`);
         }
         
         // Add media key if exists
         if (message.r2_key) {
           groups[groupId].media_keys.push(message.r2_key);
+          console.log(`Frontend: Added media key to group ${groupId}: ${message.r2_key}`);
         }
         
         // Set text (caption) - usually from the first message with text
         if (!groups[groupId].text && message.text) {
           groups[groupId].text = message.text;
+          console.log(`Frontend: Set caption for group ${groupId}: ${message.text.substring(0, 50)}...`);
         }
       } else {
         // This is a standalone message
@@ -60,6 +78,7 @@ export const MessageGallery = () => {
           date: message.date,
           telegram_message_id: message.telegram_message_id
         });
+        console.log(`Frontend: Added standalone message ${message.id} with ${message.r2_key ? 1 : 0} media items`);
       }
     }
     
@@ -67,7 +86,11 @@ export const MessageGallery = () => {
     const groupArray = Object.values(groups).sort((a, b) => new Date(a.date) - new Date(b.date));
     
     // Merge groups and standalone messages, then sort by date descending (newest first)
-    return [...groupArray, ...result].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const finalResult = [...groupArray, ...result].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    console.log(`Frontend: Grouping complete - ${groupArray.length} groups, ${result.length} standalone, total: ${finalResult.length}`);
+    
+    return finalResult;
   };
   
   const groupedMessages = groupMessages(messages);
@@ -136,6 +159,14 @@ export const MessageGallery = () => {
                         alt="Attachment" 
                         className="object-cover w-full h-32 rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
                         loading="lazy"
+                        onError={(e) => {
+                          console.error('Frontend: Image load failed:', e.target.src);
+                          console.error('Frontend: Error details:', e);
+                          e.target.style.display = 'none'; // Hide broken images
+                        }}
+                        onLoad={(e) => {
+                          console.log('Frontend: Image loaded successfully:', e.target.src);
+                        }}
                       />
                     ))}
                   </div>
