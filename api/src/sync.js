@@ -44,18 +44,27 @@ export class SyncService {
         'SELECT telegram_message_id FROM messages WHERE chat_id = ? ORDER BY telegram_message_id ASC LIMIT 1'
       ).bind(targetChannelId).first();
 
-      const offsetId = lastMessage ? lastMessage.telegram_message_id : 0;
+      const lastId = lastMessage ? lastMessage.telegram_message_id : 0;
       
-      console.log(`Debug: Oldest message ID in DB: ${offsetId}, fetching from Telegram...`);
+      console.log(`Debug: Oldest message ID in DB: ${lastId}, fetching from Telegram...`);
       
-      // CRITICAL: Fetch only 1 message at a time to prevent CPU timeout
-      // Use max_id to get messages older than the oldest one we have
-      console.log(`Debug: Fetching with max_id: ${offsetId}, Limit: 1`);
-      const messages = await client.getMessages(channel, {
-        limit: 1,  // Atomic sync - only 1 message per request
-        max_id: offsetId,  // Get messages older than this ID
-        reverse: true,  // CRITICAL: Fetch in chronological order (oldest first)
-      });
+      // CRITICAL: Use robust fetching strategy
+      let fetchOptions = {
+        limit: 5,        // Increase to 5 to skip potential deleted messages
+        reverse: true,   // Fetch Oldest -> Newest
+      };
+
+      if (lastId > 0) {
+        // Update case: Fetch messages newer than known
+        fetchOptions.min_id = lastId;
+        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 5)`);
+      } else {
+        // CRITICAL FIX: If DB is empty, start from the beginning of time
+        fetchOptions.offset_date = 0; 
+        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 5)`);
+      }
+
+      const messages = await client.getMessages(channel, fetchOptions);
 
       console.log(`Debug: Got message ID: ${messages[0]?.id}, Total: ${messages.length}`);
 
