@@ -1,6 +1,9 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 
+// Polyfill to allow JSON.stringify() to handle BigInts
+BigInt.prototype.toJSON = function() { return this.toString(); };
+
 /**
  * Global Helper: Safely converts any input to BigInt.
  * Handles: null, undefined, numbers, strings.
@@ -68,10 +71,11 @@ export class SyncService {
 
       // Use GramJS Iterator (The Mature Framework Approach)
       const messages = [];
+      const limitNum = 5; // Ensure this is a Number, NOT BigInt
       try {
         for await (const message of client.iterMessages(channelBigInt, {
-          limit: 5,              // Fetch small batches
-          minId: lastIdBigInt,   // Iterator handles the "newer than" logic reliably
+          limit: limitNum,       // Number
+          minId: lastIdBigInt,   // BigInt
           reverse: true,         // Iterate chronologically (Oldest -> Newest)
         })) {
           // Double-check to ensure API respected minId
