@@ -25,7 +25,13 @@ export const useMessageStore = create((set, get) => ({
   
   // API Actions
   fetchMessages: async (limit = 50, reset = false) => {
-    const { offset, messages } = get();
+    const { messages, offset } = get();
+    const { selectedChannel } = useChannelStore.getState();
+    
+    if (!selectedChannel) {
+      set({ error: 'No channel selected', isLoading: false });
+      return { success: false, error: 'No channel selected' };
+    }
     
     if (reset) {
       set({ isLoading: true, error: null, messages: [], offset: 0, hasMore: true });
@@ -35,7 +41,8 @@ export const useMessageStore = create((set, get) => ({
     
     try {
       const currentOffset = reset ? 0 : offset;
-      const response = await authenticatedFetch(`${API_BASE}/messages?limit=${limit}&offset=${currentOffset}`);
+      // CRITICAL: Pass channelId to prevent data leakage
+      const response = await authenticatedFetch(`${API_BASE}/messages?channelId=${selectedChannel.id}&limit=${limit}&offset=${currentOffset}`);
       const data = await response.json();
       
       if (data.success) {

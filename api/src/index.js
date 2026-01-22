@@ -174,14 +174,23 @@ app.post('/auth/verify2fa', async (c) => {
 
 // Messages routes
 app.get('/messages', async (c) => {
+  const channelId = c.req.query('channelId');
   const limit = parseInt(c.req.query('limit') || '50');
   const offset = parseInt(c.req.query('offset') || '0');
   const syncService = c.get('syncService');
   
-  const result = await syncService.getArchivedMessages(limit, offset);
+  // CRITICAL: Validate channelId to prevent data leakage
+  if (!channelId) {
+    console.log('Debug: Missing channelId parameter - returning empty array');
+    return c.json({ success: false, error: 'channelId is required' }, 400);
+  }
+  
+  console.log(`Debug: Fetching messages for channel ${channelId}, limit: ${limit}, offset: ${offset}`);
+  
+  const result = await syncService.getArchivedMessages(channelId, limit, offset);
   
   // Debug: Log fetched data structure
-  console.log(`Debug: Fetched ${result.messages.length} messages from DB`);
+  console.log(`Debug: Fetched ${result.messages.length} messages from DB for channel ${channelId}`);
   if (result.messages.length > 0) {
     console.log('Debug: Sample message structure:', JSON.stringify(result.messages[0], null, 2));
     console.log('Debug: First message keys:', Object.keys(result.messages[0]));

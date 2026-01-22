@@ -310,16 +310,17 @@ export class SyncService {
     }
   }
 
-  async getArchivedMessages(limit = 50, offset = 0) {
+  async getArchivedMessages(channelId, limit = 50, offset = 0) {
     try {
       const messages = await this.env.DB.prepare(`
         SELECT m.id, m.telegram_message_id, m.text, m.date, m.created_at, m.grouped_id,
                md.r2_key, md.file_type, md.mime_type
         FROM messages m
         LEFT JOIN media md ON m.id = md.message_id
+        WHERE m.chat_id = ?
         ORDER BY m.date DESC
         LIMIT ? OFFSET ?
-      `).bind(limit, offset).all();
+      `).bind(channelId, limit, offset).all();
 
       return {
         success: true,
@@ -329,7 +330,8 @@ export class SyncService {
       console.error('Error getting archived messages:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        messages: []
       };
     }
   }
