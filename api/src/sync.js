@@ -91,7 +91,7 @@ export class SyncService {
           // NO offset_id - Start from top of channel naturally
         })) {
           // Double-check to ensure API respected minId
-          if (message.id <= latestId) {
+          if (toBigInt(message.id) <= latestId) {
             console.log(`Debug: Phase 1: Stopping at message ${message.id} (Reached min_id: ${latestId})`);
             break; // Stop iterator when we hit known history
           }
@@ -99,7 +99,7 @@ export class SyncService {
         }
         
         // Filter actual new messages (those newer than our latest)
-        const newMessages = messages.filter(m => m.id > latestId);
+        const newMessages = messages.filter(m => toBigInt(m.id) > latestId);
         console.log(`Debug: Phase 1: Found ${messages.length} total, ${newMessages.length} truly new messages`);
         
         // Phase 2: Auto-Switch to Backfill if no new messages
@@ -144,13 +144,13 @@ export class SyncService {
         // Track the maximum ID we've seen (for history tracking)
         if (isBackfillMode) {
           // For backfill: track OLDEST message (smallest ID)
-          if (message.id < maxIdInBatch) {
-            maxIdInBatch = message.id;
+          if (toBigInt(message.id) < maxIdInBatch) {
+            maxIdInBatch = toBigInt(message.id);
           }
         } else {
           // For forward sync: track NEWEST message (largest ID)
-          if (message.id > maxIdInBatch) {
-            maxIdInBatch = message.id;
+          if (toBigInt(message.id) > maxIdInBatch) {
+            maxIdInBatch = toBigInt(message.id);
           }
         }
         
