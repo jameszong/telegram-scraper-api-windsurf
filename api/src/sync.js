@@ -38,7 +38,7 @@ export class SyncService {
       const client = await this.getClient();
       await client.connect();
 
-      // Get channel entity - CRITICAL: Use BigInt for GramJS
+      // Get channel entity - CRITICAL: Use BigInt for GramJS, but only if channelId exists
       const channelBigInt = BigInt(channelIdStr);
       const channel = await client.getEntity(channelBigInt);
       
