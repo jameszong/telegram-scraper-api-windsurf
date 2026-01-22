@@ -41,20 +41,20 @@ export class SyncService {
       
       // Get last message ID from our database to avoid duplicates
       const lastMessage = await this.env.DB.prepare(
-        'SELECT telegram_message_id FROM messages WHERE chat_id = ? ORDER BY telegram_message_id DESC LIMIT 1'
+        'SELECT telegram_message_id FROM messages WHERE chat_id = ? ORDER BY telegram_message_id ASC LIMIT 1'
       ).bind(targetChannelId).first();
 
       const offsetId = lastMessage ? lastMessage.telegram_message_id : 0;
       
-      console.log(`Debug: Last message ID in DB: ${offsetId}, fetching from Telegram...`);
+      console.log(`Debug: Oldest message ID in DB: ${offsetId}, fetching from Telegram...`);
       
       // CRITICAL: Fetch only 1 message at a time to prevent CPU timeout
-      // Use min_id to get messages newer than the last one we have
-      console.log(`Debug: Fetching with min_id: ${offsetId}, Limit: 1`);
+      // Use max_id to get messages older than the oldest one we have
+      console.log(`Debug: Fetching with max_id: ${offsetId}, Limit: 1`);
       const messages = await client.getMessages(channel, {
         limit: 1,  // Atomic sync - only 1 message per request
-        min_id: offsetId,  // Get messages newer than this ID
-        reverse: false,  // Get in chronological order (newest first)
+        max_id: offsetId,  // Get messages older than this ID
+        reverse: true,  // CRITICAL: Fetch in chronological order (oldest first)
       });
 
       console.log(`Debug: Got message ID: ${messages[0]?.id}, Total: ${messages.length}`);
