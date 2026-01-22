@@ -91,7 +91,7 @@ export class SyncService {
       
       // SMART AUTO-BACKFILL STRATEGY: Phase 1 (Updates) -> Phase 2 (History)
       let messages = [];
-      const limitNum = 30;
+      const limitNum = 20;
       let isBackfillMode = false;
       
       try {

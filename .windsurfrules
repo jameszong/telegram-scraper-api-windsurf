@@ -1,0 +1,54 @@
+# Windsurf Project Rules & Standards (v2.0)
+
+## 1. Core Philosophy: Cloudflare Workers & Stability
+- **Environment**: V8-based Cloudflare Workers (Not Node.js).
+- **Constraint**: Stateless execution. 30s CPU limit.
+- **Goal**: Robust Telegram Archiving via GramJS.
+
+## 2. Type Safety: The "BigInt" Iron Law 🛡️
+**Context**: Telegram IDs exceed 53-bit integers. D1 DB returns `null` for empty sets. JS `BigInt` crashes on mixed types.
+
+- **RULE 1: Global Utility**: NEVER use `BigInt(val)` directly.
+  - **MANDATORY**: Use a helper `toBigInt(val)` that catches errors and converts `null/undefined` to `0n`.
+- **RULE 2: No Math Functions**:
+  - **FORBIDDEN**: `Math.max(a, b)` or `Math.min(a, b)` with BigInts.
+  - **REQUIRED**: Use manual comparison: `if (a > b) max = a;`.
+- **RULE 3: Strict Comparisons**:
+  - Do not compare BigInt with Number (e.g., `id > 0`).
+  - **Fix**: `id > 0n` (Suffix 'n' is mandatory).
+- **RULE 4: JSON Polyfill**:
+  - Must include `BigInt.prototype.toJSON = function() { return this.toString() }` at entry.
+
+## 3. Telegram Sync Strategy (The "Reverse" Law) 🔄
+**Context**: Forward fetching (`reverse: true`) with `min_id` is unreliable on the API level.
+
+- **STRATEGY**: **Newest -> Oldest** (`reverse: false`).
+  - We fetch from the "Channel Top" (or a specific offset) and walk BACKWARDS into history.
+- **PAGINATION**:
+  - Use `client.iterMessages()`.
+  - **Param `reverse`**: MUST be `false`.
+  - **Param `offsetId`**: Sets the *starting point* (exclusive upper bound). Used for "Backfill" (fetching older history).
+  - **Param `min_id`**: Sets the *stopping point* (exclusive lower bound). Used for "Incremental Sync" (fetching updates).
+  - **Limit**: Set to **30** (safe chunk size).
+
+## 4. Backfill & History Logic 🕰️
+- **Incremental Sync (New Msgs)**:
+  - Fetch from Top (`offsetId: 0`).
+  - Stop at `max_db_id` (using `min_id` or manual break).
+- **Backfill Sync (Old Msgs)**:
+  - Fetch starting from `min_db_id` (`offsetId: min_db_id`).
+  - Fetch indefinitely (or until limit).
+- **Crash Prevention**:
+  - When calculating "Next Batch Offset", ensure the ID variable is `BigInt`.
+
+## 5. Database Standards (D1)
+- **Queries**: Always assume `result` can be `null`.
+  - Example: `const lastId = toBigInt(result?.lastId);`
+- **Writes**: Use `INSERT OR REPLACE` to handle duplicates gracefully.
+- **Await**: All DB operations must be `await`ed before proceeding.
+
+## 6. Coding Style
+- **No "Fixing" Lines**: Refactor logic blocks instead of patching single lines.
+- **Logs**:
+  - Log `BigInt` values as strings (`id.toString()`).
+  - Log "Batch Start" and "Batch End" status clearly.
