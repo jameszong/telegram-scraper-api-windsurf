@@ -75,7 +75,8 @@ export class SyncService {
           reverse: true,         // Iterate chronologically (Oldest -> Newest)
         })) {
           // Double-check to ensure API respected minId
-          if (toBigInt(message.id) <= lastIdBigInt) {
+          // message.id is already BigInt from GramJS, just compare directly
+          if (message.id <= lastIdBigInt) {
             console.log(`Debug: Skipping old message ${message.id} (Expected > ${lastIdBigInt})`);
             continue; 
           }
