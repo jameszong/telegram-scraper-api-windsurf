@@ -41,7 +41,7 @@ export class SyncService {
       
       // Get last message ID from our database to avoid duplicates
       const lastMessage = await this.env.DB.prepare(
-        'SELECT telegram_message_id FROM messages WHERE chat_id = ? ORDER BY telegram_message_id ASC LIMIT 1'
+        'SELECT MAX(telegram_message_id) as telegram_message_id FROM messages WHERE chat_id = ?'
       ).bind(targetChannelId).first();
 
       const lastId = lastMessage ? lastMessage.telegram_message_id : 0;
@@ -50,18 +50,18 @@ export class SyncService {
       
       // CRITICAL: Use robust fetching strategy
       let fetchOptions = {
-        limit: 5,        // INCREASE to 5 to skip initial service messages
+        limit: 3,        // SAFE MIDDLE GROUND: 3 messages to prevent 503 but skip service messages
         reverse: true,   // Fetch Oldest -> Newest
       };
 
       if (lastId > 0) {
         // Update case: Fetch messages newer than known
         fetchOptions.min_id = lastId;
-        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 5)`);
+        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 3)`);
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
-        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 5)`);
+        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 3)`);
       }
 
       const messages = await client.getMessages(channel, fetchOptions);
@@ -109,8 +109,22 @@ export class SyncService {
             syncedCount++;
           }
         } else {
-          // CRITICAL: Log skipped messages to debug infinite loop
-          console.log(`Debug: Skipping message ${message.id} (No text or media content)`);
+          // CRITICAL: Save service messages as placeholders to ensure forward progress
+          console.log(`Debug: Saving service message ${message.id} as placeholder to prevent infinite loop`);
+          const placeholderData = {
+            telegram_message_id: message.id.toString(),
+            chat_id: message.chatId ? message.chatId.toString() : targetChannelId.toString(),
+            text: '[Service Message]',
+            date: new Date(message.date * 1000).toISOString(),
+            grouped_id: null,
+            media: null
+          };
+          
+          const result = await this.saveMessage(placeholderData);
+          if (result.success) {
+            syncedCount++;
+            console.log(`Debug: Successfully saved placeholder for service message ${message.id}`);
+          }
         }
       }
 
