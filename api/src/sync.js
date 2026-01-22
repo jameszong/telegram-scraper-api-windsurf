@@ -25,11 +25,12 @@ const bigIntMax = (...args) => {
 
 // REPLACEMENT for Math.min - Strictly for BigInts
 const bigIntMin = (...args) => {
+  if (args.length === 0) return 0n;
   return args.reduce((m, e) => {
        const val = toBigInt(e);
        const min = toBigInt(m);
-       return (min === 0n || (val < min && val !== 0n)) ? val : min;
-  }, 0n);
+       return val < min ? val : min;
+  });
 };
 
 export class SyncService {
@@ -169,7 +170,7 @@ export class SyncService {
             telegram_message_id: message.id.toString(), // Convert BigInt to string
             chat_id: channelIdStr, // CRITICAL: Use the string channelId consistently
             text: message.text || '',
-            date: new Date(message.date * 1000).toISOString(),
+            date: new Date(Number(message.date) * 1000).toISOString(),
             grouped_id: message.groupedId ? message.groupedId.toString() : null, // Add grouped_id for album support
             media: null
           };
@@ -204,7 +205,7 @@ export class SyncService {
             telegram_message_id: message.id.toString(),
             chat_id: channelIdStr, // CRITICAL: Use the consistent string channelId
             text: '[Service Message]',
-            date: new Date(message.date * 1000).toISOString(),
+            date: new Date(Number(message.date) * 1000).toISOString(),
             grouped_id: null,
             media: null
           };
