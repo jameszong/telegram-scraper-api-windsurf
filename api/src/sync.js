@@ -151,14 +151,19 @@ export class SyncService {
 
       let syncedCount = 0;
       let mediaCount = 0;
-      let maxIdInBatch = isBackfillMode ? earliestId : latestId; // Track max ID based on strategy
+      let maxIdInBatch = isBackfillMode ? 0n : latestId; // Track max ID based on strategy
+      let oldestIdInBatch = 0n; // Track oldest ID for backfill next offset
 
       // Process Messages (Standard Loop) - No more stuck detection needed
       for (const message of messages) {
         // Track the maximum ID we've seen (for history tracking)
         if (isBackfillMode) {
           // For backfill: track OLDEST message (smallest ID)
-          maxIdInBatch = bigIntMin(maxIdInBatch, toBigInt(message.id));
+          const msgId = toBigInt(message.id);
+          if (oldestIdInBatch === 0n || msgId < oldestIdInBatch) {
+            oldestIdInBatch = msgId;
+          }
+          maxIdInBatch = bigIntMax(maxIdInBatch, msgId);
         } else {
           // For forward sync: track NEWEST message (largest ID)
           maxIdInBatch = bigIntMax(maxIdInBatch, toBigInt(message.id));
