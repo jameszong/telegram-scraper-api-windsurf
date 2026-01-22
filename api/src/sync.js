@@ -71,13 +71,14 @@ export class SyncService {
 
       // Use GramJS Iterator (The Mature Framework Approach)
       const messages = [];
-      const limitNum = 5; // Ensure this is a Number, NOT BigInt
+      const limitNum = 30; // Rule #3: Set limit to 30 to bridge gaps in message history
       try {
-        console.log(`Debug: Fetching history > ${lastIdBigInt} (min_id only, reverse=true)`);
+        console.log(`Debug: Fetching > ${lastIdBigInt} (Type: ${typeof lastIdBigInt}, Limit: ${limitNum})`);
         for await (const message of client.iterMessages(channelBigInt, {
-          limit: limitNum,       // Number
-          min_id: lastIdBigInt,  // BigInt (ONLY use min_id for "newer than" logic)
-          reverse: true,         // Keep reverse: true as requested
+          limit: limitNum,       // Number (Rule #3: at least 20 for safety)
+          min_id: lastIdBigInt,  // BigInt (Rule #3: ONLY use min_id)
+          reverse: true,         // Rule #3: MUST set reverse: true
+          // Rule #3: NO offset_id parameter - forbidden with reverse: true
         })) {
           // Double-check to ensure API respected minId
           // message.id is already BigInt from GramJS, just compare directly
@@ -87,6 +88,7 @@ export class SyncService {
           }
           messages.push(message);
         }
+        console.log(`Debug: Fetched ${messages.length} messages`);
       } catch (e) {
         console.error("GramJS Iterator Error:", e);
         await client.disconnect();
