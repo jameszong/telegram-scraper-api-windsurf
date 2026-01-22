@@ -70,16 +70,22 @@ export class SyncService {
             media: null
           };
 
-          // Handle media if present
+          // Handle media if present - STRICT PHOTO-ONLY FILTER
           if (message.media && message.media.className !== 'MessageMediaWebPage') {
-            console.log(`Debug: Processing media for message ${message.id}...`);
-            const mediaResult = await this.handleMedia(message, client, targetChannelId);
-            if (mediaResult.success) {
-              messageData.media = mediaResult.mediaData;
-              mediaCount++;
-              console.log(`Debug: Successfully processed media for message ${message.id}`);
+            // CRITICAL: Only process photos, skip all documents to prevent CPU timeout
+            if (message.media.className === 'MessageMediaPhoto') {
+              console.log(`Debug: Processing photo media for message ${message.id}...`);
+              const mediaResult = await this.handleMedia(message, client, targetChannelId);
+              if (mediaResult.success) {
+                messageData.media = mediaResult.mediaData;
+                mediaCount++;
+                console.log(`Debug: Successfully processed photo for message ${message.id}`);
+              } else {
+                console.log(`Debug: Failed to process photo for message ${message.id}: ${mediaResult.error}`);
+              }
             } else {
-              console.log(`Debug: Failed to process media for message ${message.id}: ${mediaResult.error}`);
+              console.log(`Debug: Skipping non-photo media (Type: ${message.media.className}) for msg ${message.id} - CPU limit protection`);
+              // Skip download entirely, just save text metadata
             }
           }
 
@@ -116,45 +122,38 @@ export class SyncService {
 
       console.log(`Debug: Media type: ${message.media.className}`);
 
-      // Handle different media types
-      if (message.photo) {
-        console.log(`Debug: Downloading photo for message ${message.id}...`);
-        const photo = message.photo;
-        const size = photo.sizes[photo.sizes.length - 1]; // Get largest size
-        
-        buffer = await client.downloadMedia(message, {
-          workers: 1,
-        });
-
-        mediaData = {
-          type: 'photo',
-          extension: 'jpg',
-          size: buffer.length,
-          mime_type: 'image/jpeg',
-          width: size.w,
-          height: size.h
-        };
-      } else if (message.document) {
-        console.log(`Debug: Downloading document for message ${message.id}...`);
-        const document = message.document;
-        
-        buffer = await client.downloadMedia(message, {
-          workers: 1,
-        });
-
-        const extension = document.fileName.split('.').pop() || 'bin';
-        
-        mediaData = {
-          type: 'document',
-          extension: extension,
-          size: buffer.length,
-          mime_type: document.mimeType || 'application/octet-stream',
-          fileName: document.fileName
-        };
-      } else {
-        console.log(`Debug: Unsupported media type for message ${message.id}: ${message.media.className}`);
-        return { success: false, error: 'Unsupported media type' };
+      // CRITICAL: Only process photos to prevent CPU timeout
+      if (!message.photo) {
+        console.log(`Debug: Skipping non-photo media for message ${message.id} - CPU limit protection`);
+        return { success: false, error: 'Only photos are supported' };
       }
+
+      console.log(`Debug: Downloading photo for message ${message.id}...`);
+      const photo = message.photo;
+      const size = photo.sizes[photo.sizes.length - 1]; // Get largest size
+      
+      // CRITICAL: Add 5-second timeout to prevent Worker CPU limit exceeded
+      const downloadPromise = client.downloadMedia(message, { workers: 1 });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Download timeout - CPU limit protection')), 5000)
+      );
+
+      try {
+        buffer = await Promise.race([downloadPromise, timeoutPromise]);
+        console.log(`Debug: Successfully downloaded photo (${buffer.length} bytes) for message ${message.id}`);
+      } catch (downloadError) {
+        console.error(`Error downloading photo for message ${message.id}:`, downloadError.message);
+        return { success: false, error: downloadError.message };
+      }
+
+      mediaData = {
+        type: 'photo',
+        extension: 'jpg',
+        size: buffer.length,
+        mime_type: 'image/jpeg',
+        width: size.w,
+        height: size.h
+      };
 
       if (buffer && mediaData) {
         // Generate unique key for R2
