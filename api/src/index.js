@@ -20,6 +20,12 @@ app.use('/*', cors({
 
 // STEP 2: Access Key Middleware (AFTER CORS)
 app.use('/*', async (c, next) => {
+  // ALLOW PUBLIC ACCESS TO MEDIA
+  // Browser img tags cannot send headers, so media must be public.
+  if (c.req.path.startsWith('/media/') || c.req.path === '/media') {
+    return next();
+  }
+  
   // Skip check for OPTIONS requests (Preflight)
   if (c.req.method === 'OPTIONS') {
     return next();
@@ -249,8 +255,9 @@ app.post('/admin/clear-r2', async (c) => {
 
 // Media routes - Allow keys with slashes
 app.get('/media/*', async (c) => {
-  // Extract full path after /media/
-  const key = c.req.path.replace('/media/', '');
+  // Extract key: remove the leading '/media/' route prefix
+  // If request is /media/media/filename.jpg -> key is media/filename.jpg (Correct for R2)
+  const key = c.req.path.replace(/^\/media\//, '');
   
   console.log(`Debug: Media request - Key: "${key}"`);
   console.log(`Debug: Media request - Full path: "${c.req.path}"`);
