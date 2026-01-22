@@ -38,8 +38,9 @@ export class SyncService {
       const client = await this.getClient();
       await client.connect();
 
-      // Get channel entity
-      const channel = await client.getEntity(targetChannelId);
+      // Get channel entity - CRITICAL: Use BigInt for GramJS
+      const channelBigInt = BigInt(channelIdStr);
+      const channel = await client.getEntity(channelBigInt);
       
       // Get last message ID from our database to avoid duplicates
       const lastMessage = await this.env.DB.prepare(
@@ -50,7 +51,8 @@ export class SyncService {
       
       console.log(`Debug: DB Last ID for ${channelIdStr} is: ${lastId} (Type: ${typeof lastId}), fetching from Telegram...`);
       
-      // CRITICAL: Use robust fetching strategy
+      // CRITICAL: Use robust fetching strategy with proper types
+      const minIdInt = Number(lastId); // Ensure lastId is a Number for GramJS
       let fetchOptions = {
         limit: 3,        // SAFE MIDDLE GROUND: 3 messages to prevent 503 but skip service messages
         reverse: true,   // Fetch Oldest -> Newest
@@ -58,15 +60,15 @@ export class SyncService {
 
       if (lastId > 0) {
         // Update case: Fetch messages newer than known
-        fetchOptions.min_id = lastId;
-        console.log(`Debug: Fetching history AFTER ID ${lastId} (Limit 3)`);
+        fetchOptions.min_id = minIdInt;
+        console.log(`Debug: Fetching > ${minIdInt} (Type: ${typeof minIdInt}) with BigInt channel ${channelBigInt}`);
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
-        console.log(`Debug: Fetching history from BEGINNING (Offset Date 0, Limit 3)`);
+        console.log(`Debug: Fetching from BEGINNING (Offset Date 0, Limit 3)`);
       }
 
-      const messages = await client.getMessages(channel, fetchOptions);
+      const messages = await client.getMessages(channelBigInt, fetchOptions);
 
       console.log(`Debug: Got message ID: ${messages[0]?.id}, Total: ${messages.length}`);
 
@@ -74,8 +76,17 @@ export class SyncService {
 
       let syncedCount = 0;
       let mediaCount = 0;
+      let maxIdInBatch = minIdInt; // Track maximum ID seen in this batch
 
       for (const message of messages) {
+        // STUCK PROTECTION: Skip old messages if Telegram ignores min_id
+        if (message.id <= minIdInt) {
+          console.log(`Debug: Skipping old message ID ${message.id} (Expected > ${minIdInt}) - Telegram ignored min_id`);
+          continue;
+        }
+
+        maxIdInBatch = Math.max(maxIdInBatch, message.id);
+        
         if (message.text || message.media) {
           // Convert BigInt IDs to strings to avoid JSON serialization issues
           const messageData = {
@@ -127,6 +138,27 @@ export class SyncService {
             syncedCount++;
             console.log(`Debug: Successfully saved placeholder for service message ${message.id}`);
           }
+        }
+      }
+
+      // FORCE STEP: If we didn't find any NEW messages in this batch, we're stuck
+      if (messages.length > 0 && maxIdInBatch === minIdInt) {
+        console.log(`Debug: Stuck at ID ${minIdInt}. Force skipping +1 to break infinite loop.`);
+        
+        // Insert a dummy placeholder to force progress
+        const forceStepData = {
+          telegram_message_id: (minIdInt + 1).toString(),
+          chat_id: channelIdStr,
+          text: '[Force Step - Stuck Detection]',
+          date: new Date().toISOString(),
+          grouped_id: null,
+          media: null
+        };
+        
+        const result = await this.saveMessage(forceStepData);
+        if (result.success) {
+          console.log(`Debug: Successfully inserted force step placeholder at ID ${minIdInt + 1}`);
+          syncedCount++;
         }
       }
 
