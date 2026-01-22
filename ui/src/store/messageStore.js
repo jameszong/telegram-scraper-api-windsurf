@@ -31,7 +31,7 @@ export const useMessageStore = create((set, get) => ({
     // Use passed channelId or get from store if not provided
     const selectedChannel = channelId || useChannelStore.getState().selectedChannel;
     
-    if (!selectedChannel) {
+    if (!selectedChannel || !selectedChannel.id) {
       set({ error: 'No channel selected', isLoading: false });
       return { success: false, error: 'No channel selected' };
     }
