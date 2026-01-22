@@ -59,53 +59,89 @@ export class SyncService {
       const channelBigInt = toBigInt(channelIdStr);
       const channel = await client.getEntity(channelBigInt);
       
-      // Get last message ID from our database to avoid duplicates
-      const lastMessage = await this.env.DB.prepare(
-        'SELECT MAX(CAST(telegram_message_id AS INTEGER)) as telegram_message_id FROM messages WHERE chat_id = ?'
-      ).bind(channelIdStr).first();
+      // Get message range from our database to determine sync strategy
+      const rangeResult = await this.env.DB.prepare(`
+        SELECT 
+          MIN(CAST(telegram_message_id AS INTEGER)) as earliestId,
+          MAX(CAST(telegram_message_id AS INTEGER)) as latestId,
+          COUNT(*) as totalCount
+        FROM messages WHERE chat_id = ?
+      `).bind(channelIdStr).first();
 
-      const rawLastId = lastMessage ? lastMessage.telegram_message_id : 0;
-      const lastIdBigInt = toBigInt(rawLastId); // Returns 0n if DB is empty
+      const earliestId = toBigInt(rangeResult?.earliestId || 0);
+      const latestId = toBigInt(rangeResult?.latestId || 0);
+      const totalCount = rangeResult?.totalCount || 0;
       
-      console.log(`Debug: Syncing ${channelBigInt} starting from ID ${lastIdBigInt}`);
-
-      // Use GramJS Iterator (The Mature Framework Approach)
-      const messages = [];
-      const limitNum = 30; // Increased back to 30 for reverse: false stability
-      try {
-        console.log(`Debug: Fetching NEWEST messages down to min_id: ${lastIdBigInt} (Reverse: False)`);
-        for await (const message of client.iterMessages(channelBigInt, {
-          limit: limitNum,       // Number
-          reverse: false,         // CRITICAL CHANGE: Fetch from Top (Newest -> Oldest)
-          min_id: lastIdBigInt,   // Stop when we hit what we already have
-          // NO offset_id - Start from top of channel naturally
-        })) {
-          // Double-check to ensure API respected minId
-          // message.id is already BigInt from GramJS, just compare directly
-          if (message.id <= lastIdBigInt) {
-            console.log(`Debug: Stopping at message ${message.id} (Reached min_id: ${lastIdBigInt})`);
-            break; // Stop iterator when we hit known history
+      console.log(`Debug: Channel range - Earliest: ${earliestId}, Latest: ${latestId}, Count: ${totalCount}`);
+      
+      // Strategy: If we have recent messages AND gaps exist, backfill older history
+      const shouldBackfill = earliestId > 1n && totalCount < (latestId - earliestId + 1n);
+      
+      let messages = [];
+      const limitNum = 30;
+      
+      if (shouldBackfill) {
+        console.log(`Debug: Starting HISTORY BACKFILL from ${earliestId} backwards`);
+        // Fetch messages OLDER than our earliest known message
+        try {
+          for await (const message of client.iterMessages(channelBigInt, {
+            limit: limitNum,
+            reverse: false,        // Newest -> Oldest
+            offsetId: earliestId,    // Start *after* (older than) this ID
+            // NO min_id - we want to go backwards
+          })) {
+            messages.push(message);
           }
-          messages.push(message);
+          console.log(`Debug: Backfill fetched ${messages.length} historical messages`);
+        } catch (e) {
+          console.error("Backfill Error:", e);
+          await client.disconnect();
+          return { success: false, error: 'Backfill error: ' + e.message };
         }
-        console.log(`Debug: Fetched ${messages.length} messages (Newest -> Oldest)`);
-      } catch (e) {
-        console.error("GramJS Iterator Error:", e);
-        await client.disconnect();
-        return { success: false, error: 'Iterator error: ' + e.message };
+      } else {
+        console.log(`Debug: Starting FORWARD sync from ${latestId} (no gaps detected)`);
+        // Normal forward sync (existing logic)
+        try {
+          for await (const message of client.iterMessages(channelBigInt, {
+            limit: limitNum,
+            reverse: false,         // Fetch from Top (Newest -> Oldest)
+            min_id: latestId,     // Stop when we hit what we already have
+            // NO offset_id - Start from top of channel naturally
+          })) {
+            // Double-check to ensure API respected minId
+            if (message.id <= latestId) {
+              console.log(`Debug: Stopping at message ${message.id} (Reached min_id: ${latestId})`);
+              break; // Stop iterator when we hit known history
+            }
+            messages.push(message);
+          }
+          console.log(`Debug: Forward sync fetched ${messages.length} messages`);
+        } catch (e) {
+          console.error("Forward Sync Error:", e);
+          await client.disconnect();
+          return { success: false, error: 'Forward sync error: ' + e.message };
+        }
       }
 
       console.log(`Debug: Iterator found ${messages.length} new messages.`);
 
       let syncedCount = 0;
       let mediaCount = 0;
-      let maxIdInBatch = lastIdBigInt; // Track maximum ID seen in this batch (for reverse: false)
+      let maxIdInBatch = shouldBackfill ? earliestId : latestId; // Track max ID based on strategy
 
       // Process Messages (Standard Loop) - No more stuck detection needed
       for (const message of messages) {
-        // Track the maximum ID we've seen (newest message)
-        if (message.id > maxIdInBatch) {
-          maxIdInBatch = message.id;
+        // Track the maximum ID we've seen (newest message for forward sync, oldest for backfill)
+        if (shouldBackfill) {
+          // For backfill: track OLDEST message (smallest ID)
+          if (message.id < maxIdInBatch) {
+            maxIdInBatch = message.id;
+          }
+        } else {
+          // For forward sync: track NEWEST message (largest ID)
+          if (message.id > maxIdInBatch) {
+            maxIdInBatch = message.id;
+          }
         }
         
         if (message.text || message.media) {
