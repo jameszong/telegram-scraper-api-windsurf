@@ -10,12 +10,26 @@ BigInt.prototype.toJSON = function() { return this.toString(); };
  * Defaults to 0n on failure.
  */
 const toBigInt = (val) => {
-  if (val === null || val === undefined) return 0n;
+  if (val === null || val === undefined || val === '') return 0n;
   try {
     return BigInt(val);
   } catch {
     return 0n;
   }
+};
+
+// REPLACEMENT for Math.max - Strictly for BigInts
+const bigIntMax = (...args) => {
+  return args.reduce((m, e) => toBigInt(e) > toBigInt(m) ? toBigInt(e) : toBigInt(m), 0n);
+};
+
+// REPLACEMENT for Math.min - Strictly for BigInts
+const bigIntMin = (...args) => {
+  return args.reduce((m, e) => {
+       const val = toBigInt(e);
+       const min = toBigInt(m);
+       return (min === 0n || (val < min && val !== 0n)) ? val : min;
+  }, 0n);
 };
 
 export class SyncService {
@@ -75,7 +89,6 @@ export class SyncService {
       console.log(`Debug: Channel range - Earliest: ${earliestId}, Latest: ${latestId}, Count: ${totalCount}`);
       
       // SMART AUTO-BACKFILL STRATEGY: Phase 1 (Updates) -> Phase 2 (History)
-      
       let messages = [];
       const limitNum = 30;
       let isBackfillMode = false;
@@ -144,14 +157,10 @@ export class SyncService {
         // Track the maximum ID we've seen (for history tracking)
         if (isBackfillMode) {
           // For backfill: track OLDEST message (smallest ID)
-          if (toBigInt(message.id) < maxIdInBatch) {
-            maxIdInBatch = toBigInt(message.id);
-          }
+          maxIdInBatch = bigIntMin(maxIdInBatch, toBigInt(message.id));
         } else {
           // For forward sync: track NEWEST message (largest ID)
-          if (toBigInt(message.id) > maxIdInBatch) {
-            maxIdInBatch = toBigInt(message.id);
-          }
+          maxIdInBatch = bigIntMax(maxIdInBatch, toBigInt(message.id));
         }
         
         if (message.text || message.media) {
@@ -216,7 +225,7 @@ export class SyncService {
         success: true,
         synced: syncedCount,
         media: mediaCount,
-        hasNewMessages: messages.length > 0,  // Indicate if there are more messages
+        hasNewMessages: messages.length > 0,  // Indicate if there are more Messages
         message: `Successfully synced ${syncedCount} messages with ${mediaCount} media files`
       };
     } catch (error) {
