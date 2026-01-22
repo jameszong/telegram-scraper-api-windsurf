@@ -74,65 +74,75 @@ export class SyncService {
       
       console.log(`Debug: Channel range - Earliest: ${earliestId}, Latest: ${latestId}, Count: ${totalCount}`);
       
-      // Strategy: If we have recent messages AND gaps exist, backfill older history
-      const shouldBackfill = earliestId > 1n && totalCount < (latestId - earliestId + 1n);
+      // SMART AUTO-BACKFILL STRATEGY: Phase 1 (Updates) -> Phase 2 (History)
       
       let messages = [];
       const limitNum = 30;
+      let isBackfillMode = false;
       
-      if (shouldBackfill) {
-        console.log(`Debug: Starting HISTORY BACKFILL from ${earliestId} backwards`);
-        // Fetch messages OLDER than our earliest known message
-        try {
+      try {
+        // Phase 1: Try fetching updates from Top (Newest messages)
+        console.log(`Debug: Phase 1: Fetching updates from Top (max_id: ${latestId})`);
+        
+        for await (const message of client.iterMessages(channelBigInt, {
+          limit: limitNum,
+          reverse: false,         // Fetch from Top (Newest -> Oldest)
+          min_id: latestId,     // Stop when we hit what we already have
+          // NO offset_id - Start from top of channel naturally
+        })) {
+          // Double-check to ensure API respected minId
+          if (message.id <= latestId) {
+            console.log(`Debug: Phase 1: Stopping at message ${message.id} (Reached min_id: ${latestId})`);
+            break; // Stop iterator when we hit known history
+          }
+          messages.push(message);
+        }
+        
+        // Filter actual new messages (those newer than our latest)
+        const newMessages = messages.filter(m => m.id > latestId);
+        console.log(`Debug: Phase 1: Found ${messages.length} total, ${newMessages.length} truly new messages`);
+        
+        // Phase 2: Auto-Switch to Backfill if no new messages
+        if (newMessages.length === 0 && earliestId > 1n) {
+          console.log(`Debug: Phase 1 returned 0 new messages, switching to Backfill mode`);
+          console.log(`Debug: Phase 2: Starting History Backfill from ${earliestId} backwards`);
+          
+          // Clear messages array and fetch older history
+          messages = [];
+          isBackfillMode = true;
+          
           for await (const message of client.iterMessages(channelBigInt, {
             limit: limitNum,
             reverse: false,        // Newest -> Oldest
-            offsetId: earliestId,    // Start *after* (older than) this ID
-            // NO min_id - we want to go backwards
+            offsetId: earliestId,     // Start *after* (older than) this ID
+            // NO min_id - we want to go backwards into history
           })) {
             messages.push(message);
           }
-          console.log(`Debug: Backfill fetched ${messages.length} historical messages`);
-        } catch (e) {
-          console.error("Backfill Error:", e);
-          await client.disconnect();
-          return { success: false, error: 'Backfill error: ' + e.message };
+          
+          console.log(`Debug: Phase 2: Backfill fetched ${messages.length} historical messages`);
+        } else {
+          // Use the new messages we found
+          messages = newMessages;
+          console.log(`Debug: Phase 1: Using ${messages.length} new messages`);
         }
-      } else {
-        console.log(`Debug: Starting FORWARD sync from ${latestId} (no gaps detected)`);
-        // Normal forward sync (existing logic)
-        try {
-          for await (const message of client.iterMessages(channelBigInt, {
-            limit: limitNum,
-            reverse: false,         // Fetch from Top (Newest -> Oldest)
-            min_id: latestId,     // Stop when we hit what we already have
-            // NO offset_id - Start from top of channel naturally
-          })) {
-            // Double-check to ensure API respected minId
-            if (message.id <= latestId) {
-              console.log(`Debug: Stopping at message ${message.id} (Reached min_id: ${latestId})`);
-              break; // Stop iterator when we hit known history
-            }
-            messages.push(message);
-          }
-          console.log(`Debug: Forward sync fetched ${messages.length} messages`);
-        } catch (e) {
-          console.error("Forward Sync Error:", e);
-          await client.disconnect();
-          return { success: false, error: 'Forward sync error: ' + e.message };
-        }
+        
+      } catch (e) {
+        console.error('Sync error:', e);
+        await client.disconnect();
+        return { success: false, error: 'Sync error: ' + e.message };
       }
 
       console.log(`Debug: Iterator found ${messages.length} new messages.`);
 
       let syncedCount = 0;
       let mediaCount = 0;
-      let maxIdInBatch = shouldBackfill ? earliestId : latestId; // Track max ID based on strategy
+      let maxIdInBatch = isBackfillMode ? earliestId : latestId; // Track max ID based on strategy
 
       // Process Messages (Standard Loop) - No more stuck detection needed
       for (const message of messages) {
-        // Track the maximum ID we've seen (newest message for forward sync, oldest for backfill)
-        if (shouldBackfill) {
+        // Track the maximum ID we've seen (for history tracking)
+        if (isBackfillMode) {
           // For backfill: track OLDEST message (smallest ID)
           if (message.id < maxIdInBatch) {
             maxIdInBatch = message.id;
