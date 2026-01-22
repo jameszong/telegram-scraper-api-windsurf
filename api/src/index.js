@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { TelegramClient } from 'telegram';
+import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { TelegramAuthService } from './auth.js';
 import { ChannelsService } from './channels.js';
@@ -97,13 +97,16 @@ app.post('/auth/verify', async (c) => {
     console.log('Debug: Connected!');
 
     // 5. SIGN IN
-    // Ensure phoneCodeHash is passed correctly
-    console.log('Debug: Attempting SignIn...');
-    const result = await client.signIn({
-        phoneNumber: phone,
-        phoneCodeHash: phoneCodeHash,
-        phoneCode: code,
-    });
+    // Use raw invoke to bypass missing mixin methods
+    console.log('Debug: Invoking raw Api.auth.SignIn...');
+    const result = await client.invoke(
+        new Api.auth.SignIn({
+            phoneNumber: phone,
+            phoneCodeHash: phoneCodeHash,
+            phoneCode: code,
+        })
+    );
+    console.log('Debug: Raw SignIn successful. User:', result.user ? result.user.id : 'Unknown');
     
     if (result) {
       const finalSessionString = client.session.save();
