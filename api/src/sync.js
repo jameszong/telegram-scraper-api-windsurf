@@ -192,10 +192,14 @@ export class SyncService {
 
   async saveMessage(messageData) {
     try {
-      // Insert message into D1 (deduplication via UNIQUE constraint)
+      // UPSERT message into D1 (update existing records with new media info)
       const result = await this.env.DB.prepare(`
-        INSERT OR IGNORE INTO messages (telegram_message_id, chat_id, text, date, grouped_id)
+        INSERT INTO messages (telegram_message_id, chat_id, text, date, grouped_id)
         VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(telegram_message_id, chat_id) DO UPDATE SET
+          text = excluded.text,
+          grouped_id = excluded.grouped_id,
+          date = excluded.date
       `).bind(
         messageData.telegram_message_id,
         messageData.chat_id,
@@ -204,18 +208,61 @@ export class SyncService {
         messageData.grouped_id
       ).run();
 
-      if (result.changes > 0 && messageData.media) {
-        // Save media metadata to D1
-        await this.env.DB.prepare(`
-          INSERT INTO media (message_id, r2_key, file_type, file_size, mime_type)
-          VALUES (?, ?, ?, ?, ?)
+      // Debug: Log database write
+      if (messageData.media) {
+        console.log(`Debug: Updating DB for msg ${messageData.telegram_message_id} with media key: ${messageData.media.r2_key}`);
+      }
+
+      // For UPSERT, we need to get the message ID regardless of whether it was inserted or updated
+      let messageId;
+      if (result.changes > 0) {
+        // New message inserted
+        messageId = result.meta.last_row_id;
+      } else {
+        // Existing message updated - get its ID
+        const existingMessage = await this.env.DB.prepare(`
+          SELECT id FROM messages 
+          WHERE telegram_message_id = ? AND chat_id = ?
         `).bind(
-          result.meta.last_row_id,
-          messageData.media.r2_key,
-          messageData.media.type,
-          messageData.media.size,
-          messageData.media.mime_type
-        ).run();
+          messageData.telegram_message_id,
+          messageData.chat_id
+        ).first();
+        messageId = existingMessage.id;
+      }
+
+      if (messageId && messageData.media) {
+        // Check if media already exists for this message
+        const existingMedia = await this.env.DB.prepare(`
+          SELECT id FROM media WHERE message_id = ?
+        `).bind(messageId).first();
+
+        if (!existingMedia) {
+          // Save media metadata to D1
+          await this.env.DB.prepare(`
+            INSERT INTO media (message_id, r2_key, file_type, file_size, mime_type)
+            VALUES (?, ?, ?, ?, ?)
+          `).bind(
+            messageId,
+            messageData.media.r2_key,
+            messageData.media.type,
+            messageData.media.size,
+            messageData.media.mime_type
+          ).run();
+          console.log(`Debug: Inserted new media record for message ${messageId}`);
+        } else {
+          // Update existing media record
+          await this.env.DB.prepare(`
+            UPDATE media SET r2_key = ?, file_type = ?, file_size = ?, mime_type = ?
+            WHERE message_id = ?
+          `).bind(
+            messageData.media.r2_key,
+            messageData.media.type,
+            messageData.media.size,
+            messageData.media.mime_type,
+            messageId
+          ).run();
+          console.log(`Debug: Updated existing media record for message ${messageId}`);
+        }
       }
 
       return { success: true, messageId: result.meta.last_row_id };
