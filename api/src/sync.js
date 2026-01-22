@@ -75,7 +75,7 @@ export class SyncService {
       try {
         for await (const message of client.iterMessages(channelBigInt, {
           limit: limitNum,       // Number
-          minId: lastIdBigInt,   // BigInt
+          min_id: lastIdBigInt,  // BigInt (use underscore per GramJS docs)
           reverse: true,         // Iterate chronologically (Oldest -> Newest)
         })) {
           // Double-check to ensure API respected minId
