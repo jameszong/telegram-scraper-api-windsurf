@@ -101,7 +101,7 @@ export class SyncService {
         for await (const message of client.iterMessages(channelBigInt, {
           limit: limitNum,
           reverse: false,         // Fetch from Top (Newest -> Oldest)
-          min_id: latestId,     // Stop when we hit what we already have
+          min_id: Number(latestId),     // Convert BigInt to Number for API
           // NO offset_id - Start from top of channel naturally
         })) {
           // Double-check to ensure API respected minId
@@ -128,7 +128,7 @@ export class SyncService {
           for await (const message of client.iterMessages(channelBigInt, {
             limit: limitNum,
             reverse: false,        // Newest -> Oldest
-            offsetId: earliestId,     // Start *after* (older than) this ID
+            offsetId: Number(earliestId),     // Convert BigInt to Number for API
             // NO min_id - we want to go backwards into history
           })) {
             messages.push(message);
