@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { API_BASE, authenticatedFetch } from '../utils/api';
+import { useChannelStore } from './channelStore';
 
 export const useMessageStore = create((set, get) => ({
   // State
@@ -24,9 +25,11 @@ export const useMessageStore = create((set, get) => ({
   })),
   
   // API Actions
-  fetchMessages: async (limit = 50, reset = false) => {
+  fetchMessages: async (limit = 50, reset = false, channelId = null) => {
     const { messages, offset } = get();
-    const { selectedChannel } = useChannelStore.getState();
+    
+    // Use passed channelId or get from store if not provided
+    const selectedChannel = channelId || useChannelStore.getState().selectedChannel;
     
     if (!selectedChannel) {
       set({ error: 'No channel selected', isLoading: false });

@@ -36,7 +36,7 @@ export const Dashboard = () => {
   useEffect(() => {
     if (selectedChannel) {
       console.log('Debug: Channel switched to:', selectedChannel.id, selectedChannel.title);
-      fetchMessages(50, true);
+      fetchMessages(50, true, selectedChannel.id);
     }
   }, [selectedChannel?.id, fetchMessages]); // Use selectedChannel?.id for better reactivity
   
