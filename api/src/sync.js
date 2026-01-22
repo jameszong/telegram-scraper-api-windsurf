@@ -47,18 +47,20 @@ export class SyncService {
         'SELECT MAX(CAST(telegram_message_id AS INTEGER)) as telegram_message_id FROM messages WHERE chat_id = ?'
       ).bind(channelIdStr).first();
 
-      const lastId = lastMessage ? lastMessage.telegram_message_id : 0;
+      // CRITICAL FIX: Handle NULL (empty DB) safely
+      // If lastId is null/undefined, default to 0.
+      const rawLastId = lastMessage ? lastMessage.telegram_message_id : 0;
       
-      console.log(`Debug: DB Last ID for ${channelIdStr} is: ${lastId} (Type: ${typeof lastId}), fetching from Telegram...`);
+      console.log(`Debug: DB Last ID for ${channelIdStr} is: ${rawLastId} (Type: ${typeof rawLastId}), fetching from Telegram...`);
       
       // CRITICAL: Use robust fetching strategy with proper types
-      const lastIdBigInt = BigInt(lastId); // CRITICAL: Convert to BigInt for GramJS
+      const lastIdBigInt = BigInt(rawLastId); // Now safe (BigInt(0) works, BigInt(null) fails)
       let fetchOptions = {
         limit: 5,        // Can safely increase to 5 now with BigInt fix
         reverse: true,   // Fetch Oldest -> Newest
       };
 
-      if (lastId > 0) {
+      if (rawLastId > 0) {
         // Update case: Fetch messages newer than known
         fetchOptions.min_id = lastIdBigInt;    // Pass BigInt
         fetchOptions.offset_id = lastIdBigInt; // Pass as offset_id too for safety
@@ -66,7 +68,7 @@ export class SyncService {
       } else {
         // CRITICAL FIX: If DB is empty, start from the beginning of time
         fetchOptions.offset_date = 0; 
-        console.log(`Debug: Fetching from BEGINNING (Offset Date 0, Limit 5)`);
+        console.log(`Debug: Fetching from BEGINNING (Offset Date 0, Limit 5) - DB is empty`);
       }
 
       const messages = await client.getMessages(channelBigInt, fetchOptions);
@@ -77,11 +79,11 @@ export class SyncService {
 
       let syncedCount = 0;
       let mediaCount = 0;
-      let maxIdInBatch = lastIdBigInt; // Track maximum ID seen in this batch (BigInt)
+      let maxIdInBatch = rawLastId > 0 ? lastIdBigInt : 0n; // Track maximum ID seen in this batch (BigInt)
 
       for (const message of messages) {
         // STUCK PROTECTION: Skip old messages if Telegram ignores min_id
-        if (message.id <= lastIdBigInt) {
+        if (rawLastId > 0 && message.id <= lastIdBigInt) {
           console.log(`Debug: Skipping old message ID ${message.id} (Expected > ${lastIdBigInt}) - Telegram ignored min_id`);
           continue;
         }
@@ -143,7 +145,7 @@ export class SyncService {
       }
 
       // FORCE STEP: If we didn't find any NEW messages in this batch, we're stuck
-      if (messages.length > 0 && maxIdInBatch === lastIdBigInt) {
+      if (messages.length > 0 && rawLastId > 0 && maxIdInBatch === lastIdBigInt) {
         console.log(`Debug: Stuck at ID ${lastIdBigInt}. Force skipping +1 to break infinite loop.`);
         
         // Insert a dummy placeholder to force progress
