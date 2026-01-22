@@ -48,11 +48,16 @@ export class SyncService {
       
       console.log(`Debug: Last message ID in DB: ${offsetId}, fetching from Telegram...`);
       
-      // Fetch messages from Telegram
+      // CRITICAL: Fetch only 1 message at a time to prevent CPU timeout
+      // Use min_id to get messages newer than the last one we have
+      console.log(`Debug: Fetching with min_id: ${offsetId}, Limit: 1`);
       const messages = await client.getMessages(channel, {
-        limit: 100,
-        offsetId: offsetId,
+        limit: 1,  // Atomic sync - only 1 message per request
+        min_id: offsetId,  // Get messages newer than this ID
+        reverse: false,  // Get in chronological order (newest first)
       });
+
+      console.log(`Debug: Got message ID: ${messages[0]?.id}, Total: ${messages.length}`);
 
       console.log(`Debug: Fetched ${messages.length} messages for channel ${targetChannelId}`);
 
@@ -104,6 +109,7 @@ export class SyncService {
         success: true,
         synced: syncedCount,
         media: mediaCount,
+        hasNewMessages: messages.length > 0,  // Indicate if there are more messages
         message: `Successfully synced ${syncedCount} messages with ${mediaCount} media files`
       };
     } catch (error) {

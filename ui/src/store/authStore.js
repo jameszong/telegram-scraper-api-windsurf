@@ -1,7 +1,8 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { API_BASE, authenticatedFetch } from '../utils/api';
 
-export const useAuthStore = create((set, get) => ({
+export const useAuthStore = create(persist((set, get) => ({
   // State
   isLoggedIn: false,
   isLoading: false,
@@ -162,4 +163,7 @@ export const useAuthStore = create((set, get) => ({
       return { success: false, error: 'Network error' };
     }
   }
+}), {
+  name: 'tg-auth-storage',
+  storage: createJSONStorage(() => localStorage),
 }));

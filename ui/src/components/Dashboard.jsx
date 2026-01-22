@@ -19,6 +19,8 @@ export const Dashboard = () => {
   const { 
     syncMessages, 
     isSyncing,
+    syncProgress,
+    syncStatus,
     fetchMessages,
     isLoading: messagesLoading 
   } = useMessageStore();
@@ -68,23 +70,31 @@ export const Dashboard = () => {
             
             <div className="flex items-center gap-4">
               {selectedChannel && (
-                <Button 
-                  onClick={handleSync} 
-                  disabled={isSyncing}
-                  variant="outline"
-                >
-                  {isSyncing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Sync Now
-                    </>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    onClick={handleSync} 
+                    disabled={isSyncing}
+                    variant="outline"
+                  >
+                    {isSyncing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {syncProgress > 0 ? `${syncProgress}/10` : 'Syncing...'}
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Sync Now
+                      </>
+                    )}
+                  </Button>
+                  
+                  {syncStatus && (
+                    <span className="text-sm text-muted-foreground">
+                      {syncStatus}
+                    </span>
                   )}
-                </Button>
+                </div>
               )}
               
               <Button onClick={handleLogout} variant="ghost">

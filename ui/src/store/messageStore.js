@@ -6,6 +6,8 @@ export const useMessageStore = create((set, get) => ({
   messages: [],
   isLoading: false,
   isSyncing: false,
+  syncProgress: 0,  // Add sync progress tracking
+  syncStatus: '',   // Add sync status message
   error: null,
   hasMore: true,
   offset: 0,
@@ -74,33 +76,71 @@ export const useMessageStore = create((set, get) => ({
   },
   
   syncMessages: async () => {
-    set({ isSyncing: true, error: null });
+    set({ isSyncing: true, syncProgress: 0, syncStatus: 'Starting sequential sync...', error: null });
     
     try {
-      const response = await authenticatedFetch(`${API_BASE}/sync`, {
-        method: 'POST'
+      let totalSynced = 0;
+      let totalMedia = 0;
+      const maxBatches = 10;  // Sync up to 10 messages
+      
+      for (let i = 0; i < maxBatches; i++) {
+        // Update progress
+        set({ 
+          syncProgress: i + 1, 
+          syncStatus: `Syncing batch ${i + 1}/${maxBatches}...` 
+        });
+        
+        console.log(`Debug: Syncing batch ${i + 1}/${maxBatches}`);
+        
+        const response = await authenticatedFetch(`${API_BASE}/sync`, {
+          method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          totalSynced += data.synced || 0;
+          totalMedia += data.media || 0;
+          
+          console.log(`Debug: Batch ${i + 1} result: synced=${data.synced}, media=${data.media}, hasNewMessages=${data.hasNewMessages}`);
+          
+          // Stop if no new messages
+          if (!data.hasNewMessages) {
+            console.log(`Debug: No more messages to sync, stopping at batch ${i + 1}`);
+            set({ 
+              syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.` 
+            });
+            break;
+          }
+        } else {
+          console.error(`Debug: Batch ${i + 1} failed: ${data.error}`);
+          set({ 
+            error: data.error,
+            syncStatus: `Sync failed at batch ${i + 1}: ${data.error}` 
+          });
+          break;
+        }
+        
+        // Small delay to prevent overwhelming the worker
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Reset and fetch messages after sync
+      const { fetchMessages } = get();
+      await fetchMessages(50, true);
+      
+      set({ 
+        isSyncing: false,
+        syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.`
       });
       
-      const data = await response.json();
-      
-      if (data.success) {
-        // Reset and fetch messages after sync
-        const { fetchMessages } = get();
-        await fetchMessages(50, true);
-        
-        set({ isSyncing: false });
-        return { success: true, synced: data.synced, media: data.media };
-      } else {
-        set({ 
-          error: data.error,
-          isSyncing: false 
-        });
-        return { success: false, error: data.error };
-      }
+      return { success: true, synced: totalSynced, media: totalMedia };
     } catch (error) {
+      console.error('Sequential sync error:', error);
       set({ 
         error: 'Failed to sync messages',
-        isSyncing: false 
+        isSyncing: false,
+        syncStatus: 'Sync failed due to network error'
       });
       return { success: false, error: 'Network error' };
     }
