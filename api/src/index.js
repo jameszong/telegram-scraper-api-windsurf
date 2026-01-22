@@ -183,25 +183,28 @@ app.post('/sync', async (c) => {
   return c.json(result);
 });
 
-// Media routes
-app.get('/media/:key', async (c) => {
-  const key = c.req.param('key');
+// Media routes - Allow keys with slashes
+app.get('/media/*', async (c) => {
+  // Extract full path after /media/
+  const key = c.req.path.replace('/media/', '');
   
   try {
     const object = await c.env.BUCKET.get(key);
     
     if (!object) {
-      return c.json({ error: 'Media not found' }, 404);
+      return c.text('Not Found', 404);
     }
 
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set('etag', object.httpEtag());
+    headers.set('etag', object.httpEtag);
+    // Important: Cache content to make images load fast
+    headers.set('Cache-Control', 'public, max-age=31536000');
 
     return new Response(object.body, { headers });
   } catch (error) {
     console.error('Error serving media:', error);
-    return c.json({ error: 'Failed to serve media' }, 500);
+    return c.text('Failed to serve media', 500);
   }
 });
 
