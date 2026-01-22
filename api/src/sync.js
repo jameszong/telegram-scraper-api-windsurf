@@ -1,4 +1,4 @@
-import { TelegramClient } from 'telegram';
+import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 
 export class SyncService {
@@ -31,18 +31,22 @@ export class SyncService {
         return { success: false, error: 'No target channel selected' };
       }
 
+      console.log(`Debug: Starting sync for channel ${targetChannelId}`);
+
       const client = await this.getClient();
       await client.connect();
 
-      // Get the channel entity
+      // Get channel entity
       const channel = await client.getEntity(targetChannelId);
       
-      // Get the last message ID from our database to avoid duplicates
+      // Get last message ID from our database to avoid duplicates
       const lastMessage = await this.env.DB.prepare(
         'SELECT telegram_message_id FROM messages WHERE chat_id = ? ORDER BY telegram_message_id DESC LIMIT 1'
       ).bind(targetChannelId).first();
 
       const offsetId = lastMessage ? lastMessage.telegram_message_id : 0;
+      
+      console.log(`Debug: Last message ID in DB: ${offsetId}, fetching from Telegram...`);
       
       // Fetch messages from Telegram
       const messages = await client.getMessages(channel, {
@@ -50,14 +54,17 @@ export class SyncService {
         offsetId: offsetId,
       });
 
+      console.log(`Debug: Fetched ${messages.length} messages for channel ${targetChannelId}`);
+
       let syncedCount = 0;
       let mediaCount = 0;
 
       for (const message of messages) {
         if (message.text || message.media) {
+          // Convert BigInt IDs to strings to avoid JSON serialization issues
           const messageData = {
-            telegram_message_id: message.id,
-            chat_id: targetChannelId,
+            telegram_message_id: message.id.toString(), // Convert BigInt to string
+            chat_id: message.chatId ? message.chatId.toString() : targetChannelId.toString(), // Convert BigInt to string
             text: message.text || '',
             date: new Date(message.date * 1000).toISOString(),
             media: null
@@ -80,6 +87,8 @@ export class SyncService {
       }
 
       await client.disconnect();
+
+      console.log(`Debug: Successfully synced ${syncedCount} messages with ${mediaCount} media files`);
 
       return {
         success: true,
@@ -138,7 +147,9 @@ export class SyncService {
 
       if (buffer && mediaData) {
         // Generate unique key for R2
-        const key = `media/${message.chatId}_${message.id}_${Date.now()}.${mediaData.extension}`;
+        const chatIdStr = message.chatId ? message.chatId.toString() : targetChannelId.toString();
+        const messageIdStr = message.id.toString();
+        const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${mediaData.extension}`;
         
         // Upload to R2
         await this.env.BUCKET.put(key, buffer, {
