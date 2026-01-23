@@ -420,7 +420,7 @@ export class SyncService {
       // Treat photos as fileSize = 0 (always download)
       
       if (fileSize > MAX_SIZE) {
-        console.log(`Debug: Skipping media ${message.id}: Size ${fileSize} > 300KB limit`);
+        console.log(`[Phase B] Skipping msg ${message.id}: Size ${fileSize} > 300KB limit.`);
         
         // Update DB to mark as skipped due to size
         await this.env.DB.prepare(`
@@ -435,7 +435,7 @@ export class SyncService {
         };
       }
       
-      console.log(`Debug: Media size check passed (${fileSize} bytes <= 300KB), proceeding with download`);
+      console.log(`[Phase B] Media size check passed (${fileSize} bytes <= 300KB), proceeding with download`);
 
       // Download media with timeout
       const downloadPromise = client.downloadMedia(message, { workers: 1 });
