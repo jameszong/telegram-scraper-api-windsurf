@@ -31,7 +31,18 @@ export const useChannelStore = create(
     
     try {
       const response = await authenticatedFetch(`${API_BASE}/channels`);
+      
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         set({ 
@@ -64,7 +75,17 @@ export const useChannelStore = create(
         body: JSON.stringify({ channelId })
       });
       
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         const { channels } = get();

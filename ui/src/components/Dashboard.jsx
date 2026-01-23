@@ -51,9 +51,13 @@ export const Dashboard = () => {
   const handleSync = async () => {
     if (!selectedChannel) return;
     
-    const result = await syncMessages();
-    if (result.success) {
-      // Messages will be automatically refreshed after sync
+    try {
+      const result = await syncMessages();
+      if (result && result.success) {
+        // Messages will be automatically refreshed after sync
+      }
+    } catch (error) {
+      console.error('[Dashboard] Sync failed:', error);
     }
   };
   

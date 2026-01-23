@@ -51,7 +51,17 @@ export const useAuthStore = create(persist((set, get) => ({
         body: JSON.stringify({ phoneNumber })
       });
       
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         set({ 
@@ -94,7 +104,17 @@ export const useAuthStore = create(persist((set, get) => ({
         })
       });
       
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         set({ 
@@ -137,7 +157,17 @@ export const useAuthStore = create(persist((set, get) => ({
         body: JSON.stringify({ password })
       });
       
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         set({ 
