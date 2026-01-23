@@ -388,7 +388,7 @@ export class SyncService {
         setTimeout(() => reject(new Error('Download timeout - CPU limit protection')), 10000)
       );
 
-      const buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      let buffer = await Promise.race([downloadPromise, timeoutPromise]);
       console.log(`Debug: Successfully downloaded media (${buffer.length} bytes)`);
 
       // Generate R2 key
