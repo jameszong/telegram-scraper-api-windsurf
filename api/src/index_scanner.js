@@ -36,8 +36,8 @@ app.use('/*', async (c, next) => {
   
   // Validate access key against D1
   const result = await c.env.DB.prepare(
-    'SELECT value FROM kv_store WHERE key = ?'
-  ).bind('access_key').first();
+    'SELECT value FROM app_config WHERE key = ?'
+  ).bind('ACCESS_KEY').first();
   
   if (!result || result.value !== accessKey) {
     return c.json({ error: 'Invalid access key' }, 401);
