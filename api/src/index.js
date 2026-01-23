@@ -220,6 +220,48 @@ app.post('/sync', async (c) => {
   return c.json(result);
 });
 
+// Media processing routes
+app.post('/process-media', async (c) => {
+  const syncService = c.get('syncService');
+  
+  try {
+    // Step 1: Fetch pending task
+    const pendingMessage = await c.env.DB.prepare(`
+      SELECT * FROM messages WHERE media_status = 'pending' LIMIT 1
+    `).first();
+
+    if (!pendingMessage) {
+      return c.json({ success: true, remaining: 0, message: 'No pending media to process' });
+    }
+
+    console.log(`Debug: Processing media for message ${pendingMessage.telegram_message_id}, type: ${pendingMessage.media_type}`);
+
+    // Step 2: Process the media
+    const result = await syncService.processMediaMessage(pendingMessage);
+
+    // Step 3: Count remaining pending tasks
+    const remainingCount = await c.env.DB.prepare(`
+      SELECT COUNT(*) as count FROM messages WHERE media_status = 'pending'
+    `).first();
+
+    return c.json({
+      success: true,
+      processedId: pendingMessage.id,
+      messageId: pendingMessage.telegram_message_id,
+      mediaType: pendingMessage.media_type,
+      remaining: remainingCount.count,
+      result: result
+    });
+
+  } catch (error) {
+    console.error('Process media error:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
 // Debug routes
 app.get('/debug/schema', async (c) => {
   try {

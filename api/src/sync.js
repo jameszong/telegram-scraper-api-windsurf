@@ -341,4 +341,176 @@ export class SyncService {
       };
     }
   }
+
+  async processMediaMessage(pendingMessage) {
+    try {
+      console.log(`Debug: Starting media processing for message ${pendingMessage.telegram_message_id}`);
+
+      // Get session and target channel
+      const session = await this.getSession();
+      const targetChannelId = await this.getTargetChannel();
+
+      if (!session) {
+        throw new Error('No active session found');
+      }
+
+      if (!targetChannelId) {
+        throw new Error('No target channel selected');
+      }
+
+      // Connect to Telegram
+      const client = await this.getClient();
+      await client.connect();
+
+      // Get channel entity
+      const channelBigInt = toBigInt(pendingMessage.chat_id);
+      const channel = await client.getEntity(channelBigInt);
+
+      // Fetch the specific message
+      const messages = await client.getMessages(channel, {
+        ids: [toBigInt(pendingMessage.telegram_message_id)]
+      });
+
+      if (!messages || messages.length === 0) {
+        throw new Error(`Message ${pendingMessage.telegram_message_id} not found`);
+      }
+
+      const message = messages[0];
+      if (!message.media) {
+        throw new Error(`Message ${pendingMessage.telegram_message_id} has no media`);
+      }
+
+      console.log(`Debug: Downloading media for message ${message.id}, type: ${message.media.className}`);
+
+      // Download media with timeout
+      const downloadPromise = client.downloadMedia(message, { workers: 1 });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Download timeout - CPU limit protection')), 10000)
+      );
+
+      const buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      console.log(`Debug: Successfully downloaded media (${buffer.length} bytes)`);
+
+      // Generate R2 key
+      const chatIdStr = String(targetChannelId);
+      const messageIdStr = message.id.toString();
+      const extension = this.getMediaExtension(message.media.className);
+      const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${extension}`;
+
+      console.log(`Debug: Uploading to R2: ${key}`);
+
+      // Upload to R2
+      await this.env.BUCKET.put(key, buffer, {
+        httpMetadata: {
+          contentType: this.getContentType(message.media.className)
+        }
+      });
+
+      console.log(`Debug: Successfully uploaded to R2: ${key}`);
+
+      // Update database with media key and completed status
+      await this.env.DB.prepare(`
+        UPDATE messages SET media_key = ?, media_status = 'completed' WHERE id = ?
+      `).bind(key, pendingMessage.id).run();
+
+      // Also save to media table for compatibility
+      const mediaData = {
+        type: this.getMediaType(message.media.className),
+        extension: extension,
+        size: buffer.length,
+        mime_type: this.getContentType(message.media.className),
+        r2_key: key
+      };
+
+      await this.saveMediaRecord(pendingMessage.id, mediaData);
+
+      // Free memory
+      buffer = null;
+
+      console.log(`Debug: Media processing completed for message ${pendingMessage.telegram_message_id}`);
+
+      return {
+        success: true,
+        mediaKey: key,
+        mediaData: mediaData
+      };
+
+    } catch (error) {
+      console.error(`Error processing media for message ${pendingMessage.telegram_message_id}:`, error);
+      
+      // Update status to failed
+      try {
+        await this.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed' WHERE id = ?
+        `).bind(pendingMessage.id).run();
+      } catch (dbError) {
+        console.error('Error updating failed status:', dbError);
+      }
+
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Helper methods for media processing
+  getMediaExtension(mediaClassName) {
+    switch (mediaClassName) {
+      case 'MessageMediaPhoto':
+        return 'jpg';
+      case 'MessageMediaVideo':
+        return 'mp4';
+      case 'MessageMediaDocument':
+        return 'bin';
+      default:
+        return 'bin';
+    }
+  }
+
+  getMediaType(mediaClassName) {
+    switch (mediaClassName) {
+      case 'MessageMediaPhoto':
+        return 'photo';
+      case 'MessageMediaVideo':
+        return 'video';
+      case 'MessageMediaDocument':
+        return 'document';
+      default:
+        return 'unknown';
+    }
+  }
+
+  getContentType(mediaClassName) {
+    switch (mediaClassName) {
+      case 'MessageMediaPhoto':
+        return 'image/jpeg';
+      case 'MessageMediaVideo':
+        return 'video/mp4';
+      case 'MessageMediaDocument':
+        return 'application/octet-stream';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  async saveMediaRecord(messageId, mediaData) {
+    try {
+      await this.env.DB.prepare(`
+        INSERT INTO media (message_id, r2_key, file_type, file_size, mime_type)
+        VALUES (?, ?, ?, ?, ?)
+      `).bind(
+        messageId,
+        mediaData.r2_key,
+        mediaData.type,
+        mediaData.size,
+        mediaData.mime_type
+      ).run();
+
+      console.log(`Debug: Saved media record for message ${messageId}`);
+    } catch (error) {
+      console.error('Error saving media record:', error);
+      throw error;
+    }
+  }
 }
