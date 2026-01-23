@@ -33,7 +33,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
           command: d1 migrations apply DB --remote
-          wranglerVersion: '4'
 
       - name: Deploy Scanner (Master)
         uses: cloudflare/wrangler-action@v3
@@ -41,7 +40,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
-          wranglerVersion: '4'
           secrets: |
             TELEGRAM_API_ID
             TELEGRAM_API_HASH
@@ -59,7 +57,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/processor'
-          wranglerVersion: '4'
 
       - name: Deploy Viewer
         uses: cloudflare/wrangler-action@v3
@@ -67,7 +64,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/viewer'
-          wranglerVersion: '4'
 
       - name: Generate Frontend Config
         env:
@@ -93,4 +89,3 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'ui'
           command: pages deploy dist --project-name telegram-archiver-ui
-          wranglerVersion: '4'
