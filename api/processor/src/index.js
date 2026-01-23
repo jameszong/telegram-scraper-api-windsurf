@@ -37,7 +37,11 @@ app.use('/*', async (c, next) => {
   
   // Check internal key first (for microservice communication)
   if (internalKey) {
-    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY || 'telegram-archiver-internal-2024';
+    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY;
+    if (!INTERNAL_SERVICE_KEY) {
+      console.error('[Processor Auth] INTERNAL_SERVICE_KEY not configured');
+      return c.json({ error: 'Service configuration error' }, 500);
+    }
     if (internalKey !== INTERNAL_SERVICE_KEY) {
       console.error('[Processor Auth] Invalid internal key provided');
       return c.json({ error: 'Invalid internal key' }, 401);
