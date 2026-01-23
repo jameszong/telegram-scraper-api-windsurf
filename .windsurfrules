@@ -1,54 +1,58 @@
-# Windsurf Project Rules & Standards (v2.0)
+# Windsurf Project Rules & Standards (v3.0) - The Async Architecture Update
 
-## 1. Core Philosophy: Cloudflare Workers & Stability
-- **Environment**: V8-based Cloudflare Workers (Not Node.js).
-- **Constraint**: Stateless execution. 30s CPU limit.
-- **Goal**: Robust Telegram Archiving via GramJS.
+## 1. Core Philosophy: Decoupled & Async 🏗️
+- **Environment**: Cloudflare Workers (Free Tier Constraints: 10ms CPU / 30s Wall-time).
+- **Architecture**: **Split-Phase Processing**.
+  - **Phase A (Scanner)**: Text-only, high throughput, DB inserts only. **NO Downloads**.
+  - **Phase B (Processor)**: Media-heavy, single-item processing, R2 uploads.
+- **Goal**: Zero 503 errors via aggressive load shedding.
 
 ## 2. Type Safety: The "BigInt" Iron Law 🛡️
-**Context**: Telegram IDs exceed 53-bit integers. D1 DB returns `null` for empty sets. JS `BigInt` crashes on mixed types.
+**Context**: Telegram IDs (64-bit) crash JS Numbers (53-bit).
+- **RULE 1: Helper Only**: Use `toBigInt(val)` wrapper. Never `BigInt()` directly.
+- **RULE 2: No Math Functions**: ⛔ `Math.min/max` are BANNED for IDs. Use `if (a < b)`.
+- **RULE 3: Strict Suffix**: Comparisons must use `n` suffix (e.g., `id > 0n`).
+- **RULE 4: JSON Polyfill**: Must exist at entry point to prevent serialization crashes.
 
-- **RULE 1: Global Utility**: NEVER use `BigInt(val)` directly.
-  - **MANDATORY**: Use a helper `toBigInt(val)` that catches errors and converts `null/undefined` to `0n`.
-- **RULE 2: No Math Functions**:
-  - **FORBIDDEN**: `Math.max(a, b)` or `Math.min(a, b)` with BigInts.
-  - **REQUIRED**: Use manual comparison: `if (a > b) max = a;`.
-- **RULE 3: Strict Comparisons**:
-  - Do not compare BigInt with Number (e.g., `id > 0`).
-  - **Fix**: `id > 0n` (Suffix 'n' is mandatory).
-- **RULE 4: JSON Polyfill**:
-  - Must include `BigInt.prototype.toJSON = function() { return this.toString() }` at entry.
+## 3. Telegram Sync Strategy (Reverse: False) 🔄
+- **Direction**: **Newest -> Oldest**. Fetch from Top, walk backwards.
+- **Pagination**: `client.iterMessages({ reverse: false, offsetId: ... })`.
+- **Batch Sizes**:
+  - **Phase A (Text)**: Limit **50**. (Fast metadata indexing).
+  - **Phase B (Media)**: Limit **1** (or small queue). (Heavy lifting).
 
-## 3. Telegram Sync Strategy (The "Reverse" Law) 🔄
-**Context**: Forward fetching (`reverse: true`) with `min_id` is unreliable on the API level.
+## 4. Media Handling: The "Split" Protocol ⚡
+**Context**: Downloading media in Phase A causes timeouts.
+- **Protocol A (Detection)**:
+  - In `/sync`: Check `if (msg.media)`.
+  - Action: Mark `media_status = 'pending'`, save `media_type`.
+  - **CRITICAL**: Do NOT call `downloadMedia`. Do NOT assume "no download = no media".
+- **Protocol B (Upload)**:
+  - In `/process-media`: Query `WHERE media_status = 'pending'`.
+  - Validation: Must check `buffer && buffer.length > 0` before R2 upload.
+  - Commit: Update DB to `completed` ONLY after successful R2 PUT.
+- **Delivery**:
+  - Worker returns **Public URLs** (`${R2_PUBLIC_URL}/${key}`), NEVER binary blobs.
 
-- **STRATEGY**: **Newest -> Oldest** (`reverse: false`).
-  - We fetch from the "Channel Top" (or a specific offset) and walk BACKWARDS into history.
-- **PAGINATION**:
-  - Use `client.iterMessages()`.
-  - **Param `reverse`**: MUST be `false`.
-  - **Param `offsetId`**: Sets the *starting point* (exclusive upper bound). Used for "Backfill" (fetching older history).
-  - **Param `min_id`**: Sets the *stopping point* (exclusive lower bound). Used for "Incremental Sync" (fetching updates).
-  - **Limit**: Set to **30** (safe chunk size).
+## 5. Backpressure & Stability 📉
+**Context**: Avoiding Rate Limits and CPU Exhaustion.
+- **Dynamic Cooldown**: API must return `suggestedCooldown`.
+  - **Text Mode**: ~200ms (Fast).
+  - **Media Mode**: ~1500ms+ (Slow).
+- **Frontend Logic**:
+  - Must respect `suggestedCooldown`.
+  - Must render `media_status='pending'` as a placeholder ("Queued").
+  - Must update UI state incrementally (don't wait for full batch).
 
-## 4. Backfill & History Logic 🕰️
-- **Incremental Sync (New Msgs)**:
-  - Fetch from Top (`offsetId: 0`).
-  - Stop at `max_db_id` (using `min_id` or manual break).
-- **Backfill Sync (Old Msgs)**:
-  - Fetch starting from `min_db_id` (`offsetId: min_db_id`).
-  - Fetch indefinitely (or until limit).
-- **Crash Prevention**:
-  - When calculating "Next Batch Offset", ensure the ID variable is `BigInt`.
+## 6. Database Standards (D1)
+- **Schema**:
+  - `id` (BigInt/String), `media_status` (Text), `media_key` (Text/Null).
+- **Operations**:
+  - Reads: Handle `null` results gracefully.
+  - Writes: `INSERT OR REPLACE`.
+  - **Wait**: Always `await` DB calls.
 
-## 5. Database Standards (D1)
-- **Queries**: Always assume `result` can be `null`.
-  - Example: `const lastId = toBigInt(result?.lastId);`
-- **Writes**: Use `INSERT OR REPLACE` to handle duplicates gracefully.
-- **Await**: All DB operations must be `await`ed before proceeding.
-
-## 6. Coding Style
-- **No "Fixing" Lines**: Refactor logic blocks instead of patching single lines.
-- **Logs**:
-  - Log `BigInt` values as strings (`id.toString()`).
-  - Log "Batch Start" and "Batch End" status clearly.
+## 7. Logging & Debugging
+- **Format**: `[Phase A/B] - Action - Details`.
+- **Constraint**: Do NOT log every message ID in loops (Console Spam). Log batch summaries.
+- **BigInt**: `.toString()` before logging.

@@ -1,0 +1,34 @@
+# Windsurf Project Rules & Standards
+
+## 1. Core Philosophy: Robustness First
+- **Environment**: Cloudflare Workers (V8, Stateless).
+- **Goal**: Reliable Telegram syncing using GramJS.
+- **Error Handling**: Never crash on types. Catch, log, and recover.
+
+## 2. Type Safety (The "BigInt" Law)
+- **Problem**: D1 Database returns `null` for empty queries. JS `BigInt(null)` crashes.
+- **Rule**: NEVER call `BigInt()` directly on variables.
+- **Solution**: MUST use a global utility `toBigInt(val)` that handles `null`/`undefined`/`string` and defaults to `0n`.
+- **JSON**: MUST inject `BigInt.prototype.toJSON` polyfill at entry.
+- **Math**: NEVER use `Math.max/min` with BigInt. Use `if (a > b)`.
+
+## 3. Telegram Pagination (The "Sync" Law)
+- **Method**: ALWAYS use `client.iterMessages()`. NEVER use `client.getMessages()` manually.
+- **Direction**: Syncing happens Forward (Oldest -> Newest).
+  - MUST set `reverse: true`.
+- **Filtering**:
+  - **MANDATORY**: Use `min_id` (BigInt) to fetch newer messages.
+  - **FORBIDDEN**: Do NOT use `offset_id` when `reverse: true`. It conflicts with `min_id` and causes empty results (premature stop).
+  - **Chunking**: Set `limit` to at least **20** to bridge gaps in message history. A limit of 5 is too small and fragile.
+
+## 4. Debugging & Visibility
+- **Logs**:
+  - BEFORE fetching, log: `Fetching > ${min_id} (Type: ${typeof min_id})`.
+  - AFTER fetching, log: `Fetched ${count} messages`.
+- **Frontend Hiding**:
+  - Do NOT generate fake messages like `[Force Step]`.
+  - If API returns 0 messages, trust it, but verify `min_id` was correct.
+
+## 5. Database Operations
+- **Upsert**: Use `INSERT OR REPLACE` to prevent Unique Constraint errors.
+- **Transactions**: Not strictly required for simple sync, but ensure `lastId` is updated ONLY after successful save.
