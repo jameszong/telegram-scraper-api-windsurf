@@ -1,104 +1,111 @@
-name: Deploy Telegram Archiver
+name: Deploy Microservices
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: read
-  deployments: write
-
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    branches:
+      - main
 
 jobs:
-  deploy-backend:
-    name: Deploy Backend (Cloudflare Worker)
+  deploy:
     runs-on: ubuntu-latest
-    
+    name: Deploy Workers & Frontend
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Deploy to Cloudflare Workers
-      uses: cloudflare/wrangler-action@v3
-      with:
-        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        workingDirectory: 'api'
-        secrets: |
-          TELEGRAM_API_ID
-          TELEGRAM_API_HASH
-          ACCESS_KEY
-        command: deploy
-      env:
-        # --- ADD THESE LINES ---
-        TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-        TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
-        # -----------------------
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  deploy-frontend:
-    name: Deploy Frontend (Cloudflare Pages)
-    runs-on: ubuntu-latest
-    needs: deploy-backend
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Build Frontend
-      run: npm run build --workspace=ui
-      env:
-        VITE_API_URL: ${{ vars.VITE_API_URL }}
-      
-    - name: Deploy to Cloudflare Pages
-      uses: cloudflare/wrangler-action@v3
-      with:
-        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        command: pages deploy ui/dist --project-name=telegram-archiver-ui
-        gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-  setup-database:
-    name: Setup D1 Database
-    runs-on: ubuntu-latest
-    needs: deploy-backend
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Apply D1 migrations
-      run: cd api && npx wrangler d1 migrations apply tg-archive-db --remote
+      - name: Install Global Wrangler
+        run: npm install -g wrangler
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          cd api && npm ci
+          cd ../api/processor && npm ci
+          cd ../../api/viewer && npm ci
+          cd ../../ui && npm ci
+
+      # --- Step 1: D1 Migrations ---
+      - name: Apply D1 Migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'api'
+          command: d1 migrations apply DB --remote
+
+      # --- Step 2: Deploy Scanner (Worker A) ---
+      # Injects build-time secrets so Scanner can sync them to D1
+      - name: Deploy Scanner (Master Node)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'api'
+          secrets: |
+            TELEGRAM_API_ID
+            TELEGRAM_API_HASH
+            ACCESS_KEY
+            R2_PUBLIC_URL
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+
+      # --- Step 3: Deploy Processor (Worker B) ---
+      # No secrets needed (Reads from D1)
+      - name: Deploy Processor (Downloader)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'api/processor'
+
+      # --- Step 4: Deploy Viewer (Worker C) ---
+      # No secrets needed (Reads from D1)
+      - name: Deploy Viewer (Read-Only API)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'api/viewer'
+
+      # --- Step 5: Configure & Deploy Frontend ---
+      - name: Generate Frontend Config
+        env:
+          SUBDOMAIN: ${{ secrets.CLOUDFLARE_SUBDOMAIN }}
+        run: |
+          echo "Genering API URLs for subdomain: $SUBDOMAIN"
+          
+          # Construct URLs
+          SCANNER_URL="https://telegram-archiver-api.$SUBDOMAIN.workers.dev"
+          PROCESSOR_URL="https://telegram-processor.$SUBDOMAIN.workers.dev"
+          VIEWER_URL="https://telegram-viewer.$SUBDOMAIN.workers.dev"
+          
+          # Overwrite api.js
+          cat > ui/src/utils/api.js <<EOF
+          // Auto-generated by GitHub Actions
+          export const SCANNER_URL = "$SCANNER_URL";
+          export const PROCESSOR_URL = "$PROCESSOR_URL";
+          export const VIEWER_URL = "$VIEWER_URL";
+          EOF
+          
+          echo "Configuration generated:"
+          cat ui/src/utils/api.js
+
+      - name: Build Frontend
+        working-directory: 'ui'
+        run: npm run build
+
+      - name: Deploy Frontend to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'ui'
+          command: pages deploy dist --project-name telegram-archiver-ui
