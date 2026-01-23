@@ -33,13 +33,13 @@ export class ChannelsService {
 
   async getChannels() {
     try {
-      console.log('[Channels] Fetching channels with limit to prevent CPU exhaustion');
+      console.log('[Channels] Fetching channels with PAID PLAN limits (200 dialogs)');
       const client = await this.getClient();
       await client.connect();
       
-      // Prevent CPU exhaustion by limiting dialog fetch
-      const dialogs = await client.getDialogs({ limit: 50 });
-      console.log(`[Channels] Fetched ${dialogs.length} dialogs`);
+      // PAID PLAN: Increased dialog fetch limit for better channel coverage
+      const dialogs = await client.getDialogs({ limit: 200 });
+      console.log(`[Channels] Fetched ${dialogs.length} dialogs (increased from 50)`);
       
       // Filter only channels and groups
       const channels = dialogs

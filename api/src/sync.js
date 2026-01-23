@@ -407,14 +407,15 @@ export class SyncService {
 
       console.log(`Debug: Downloading media for message ${message.id}, type: ${message.media.className}`);
 
-      // CRITICAL: Size limit check to prevent CPU limits
-      const MAX_SIZE = 300 * 1024; // 300KB
+      // PAID PLAN: Increased size limit for better media support
+      const MAX_SIZE = 50 * 1024 * 1024; // 50MB (upgraded from 300KB)
       let fileSize = 0;
       
+      // Allow all media types (Documents, Videos, Photos, GIFs) under 50MB
       if (message.media.document) {
         // Safe cast from BigInt to Number for size comparison
         fileSize = Number(message.media.document.size);
-        console.log(`[Phase B] Document size: ${fileSize} bytes`);
+        console.log(`[Phase B] Document size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
       } else if (message.media.photo && message.media.photo.sizes) {
         // Calculate max size from available photo variants
         let maxSize = 0;
@@ -425,11 +426,11 @@ export class SyncService {
           }
         }
         fileSize = maxSize;
-        console.log(`[Phase B] Photo max size: ${fileSize} bytes`);
+        console.log(`[Phase B] Photo max size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
       }
       
       if (fileSize > MAX_SIZE) {
-        console.log(`[Phase B] Skipping media ${message.id}: Size ${fileSize} > 300KB limit.`);
+        console.log(`[Phase B] Skipping media ${message.id}: Size ${(fileSize / 1024 / 1024).toFixed(2)}MB > 50MB limit.`);
         
         // Update DB to mark as skipped due to size
         await this.env.DB.prepare(`
@@ -439,17 +440,17 @@ export class SyncService {
         return {
           success: true,
           skipped: true,
-          reason: `File size ${fileSize} bytes exceeds 300KB limit`,
+          reason: `File size ${(fileSize / 1024 / 1024).toFixed(2)}MB exceeds 50MB limit`,
           mediaKey: null
         };
       }
       
-      console.log(`[Phase B] Media size check passed (${fileSize} bytes <= 300KB), proceeding with download`);
+      console.log(`[Phase B] Media size check passed (${fileSize} bytes <= 50MB), proceeding with download`);
 
-      // Download media with 15-second timeout
+      // PAID PLAN: Increased timeout for larger downloads
       const downloadPromise = client.downloadMedia(message, { workers: 1 });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Download timed out > 15s')), 15000)
+        setTimeout(() => reject(new Error('Download timed out > 60s')), 60000)
       );
 
       let buffer;
