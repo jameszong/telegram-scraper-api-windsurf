@@ -189,6 +189,20 @@ app.get('/messages', async (c) => {
   
   const result = await syncService.getArchivedMessages(channelId, limit, offset);
   
+  // Add R2 public URLs to messages with media
+  const r2PublicUrl = c.env.R2_PUBLIC_URL;
+  if (r2PublicUrl && result.messages.length > 0) {
+    result.messages = result.messages.map(message => {
+      if (message.media_key) {
+        return {
+          ...message,
+          media_url: `${r2PublicUrl}/${message.media_key}`
+        };
+      }
+      return message;
+    });
+  }
+  
   // Debug: Log fetched data structure
   console.log(`Debug: Fetched ${result.messages.length} messages from DB for channel ${channelId}`);
   if (result.messages.length > 0) {
@@ -207,10 +221,17 @@ app.post('/sync', async (c) => {
   const result = await syncService.syncMessages();
   
   // Calculate dynamic cooldown to prevent Cloudflare 503 errors
-  const BASE_DELAY = 1000; // 1 second base delay
+  const BASE_DELAY = 500; // 500ms base delay for text-only
   const MEDIA_PENALTY = 1500; // 1.5 seconds per media file
   const mediaCount = result.media || 0;
-  const suggestedCooldown = BASE_DELAY + (mediaCount * MEDIA_PENALTY);
+  
+  // Optimize: Force short cooldown for text-only batches
+  let suggestedCooldown;
+  if (mediaCount === 0) {
+    suggestedCooldown = 500; // Fast sync for text-only batches
+  } else {
+    suggestedCooldown = BASE_DELAY + (mediaCount * MEDIA_PENALTY);
+  }
   
   // Add cooldown to response
   result.suggestedCooldown = suggestedCooldown;

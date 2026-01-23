@@ -51,7 +51,7 @@ export const MessageGallery = () => {
     for (const message of sortedMessages) {
       const groupId = message.grouped_id;
       
-      console.log(`Frontend: Processing message ${message.id}, grouped_id: ${groupId}, has media: ${!!message.r2_key}`);
+      console.log(`Frontend: Processing message ${message.id}, grouped_id: ${groupId}, has media: ${!!message.media_url}`);
       
       if (groupId && groupId !== 'null') {
         // This message belongs to a group
@@ -59,17 +59,17 @@ export const MessageGallery = () => {
           groups[groupId] = {
             id: groupId,
             text: null,
-            media_keys: [],
+            media_urls: [],
             date: message.date,
             telegram_message_id: message.telegram_message_id
           };
           console.log(`Frontend: Created new group ${groupId}`);
         }
         
-        // Add media key if exists
-        if (message.r2_key) {
-          groups[groupId].media_keys.push(message.r2_key);
-          console.log(`Frontend: Added media key to group ${groupId}: ${message.r2_key}`);
+        // Add media URL if exists
+        if (message.media_url) {
+          groups[groupId].media_urls.push(message.media_url);
+          console.log(`Frontend: Added media URL to group ${groupId}: ${message.media_url}`);
         }
         
         // Set text (caption) - usually from the first message with text
@@ -82,11 +82,11 @@ export const MessageGallery = () => {
         result.push({
           id: message.id,
           text: message.text,
-          media_keys: message.r2_key ? [message.r2_key] : [],
+          media_urls: message.media_url ? [message.media_url] : [],
           date: message.date,
           telegram_message_id: message.telegram_message_id
         });
-        console.log(`Frontend: Added standalone message ${message.id} with ${message.r2_key ? 1 : 0} media items`);
+        console.log(`Frontend: Added standalone message ${message.id} with ${message.media_url ? 1 : 0} media items`);
       }
     }
     
@@ -154,22 +154,21 @@ export const MessageGallery = () => {
               <div className="bg-[#182533] p-3 rounded-lg rounded-tl-none max-w-[80%] shadow-md border border-[#0e1621]">
                 
                 {/* Image Grid for Albums */}
-                {group.media_keys.length > 0 && (
+                {group.media_urls.length > 0 && (
                   <div className={`grid gap-1 mb-2 ${
-                    group.media_keys.length === 1 ? 'grid-cols-1' : 
-                    group.media_keys.length === 2 ? 'grid-cols-2' : 
+                    group.media_urls.length === 1 ? 'grid-cols-1' : 
+                    group.media_urls.length === 2 ? 'grid-cols-2' : 
                     'grid-cols-3'
                   }`}>
-                    {group.media_keys.map((key, index) => (
+                    {group.media_urls.map((url, index) => (
                       <img 
-                        key={`${key}-${index}`}
-                        src={`${API_BASE}/media/${key}`} 
+                        key={`${url}-${index}`}
+                        src={url} 
                         alt="Attachment" 
                         className="object-cover w-full h-32 rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
                         loading="lazy"
                         onError={(e) => {
                           console.error('Frontend: Image load failed:', e.target.src);
-                          console.error('Frontend: Error details:', e);
                           e.target.style.display = 'none'; // Hide broken images
                         }}
                         onLoad={(e) => {

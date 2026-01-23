@@ -210,7 +210,23 @@ export const useMessageStore = create((set, get) => ({
         
         if (data.processedId) {
           processedCount++;
-          console.log(`Debug: Phase B - Processed media for message ${data.messageId}, ${data.remaining} remaining`);
+          console.log(`Debug: Phase B - Processed 1 media item. Queue remaining: ${data.remaining}`);
+          
+          // Update local messages state to include new media_url for instant display
+          const { messages } = get();
+          const updatedMessages = messages.map(msg => {
+            if (msg.telegram_message_id === data.messageId && data.result?.mediaKey) {
+              const r2PublicUrl = "https://pub-5e1e5a4b6b8b4a8b8b8b8b8b8b8b8b8b.r2.dev"; // This should come from env
+              return {
+                ...msg,
+                media_url: `${r2PublicUrl}/${data.result.mediaKey}`
+              };
+            }
+            return msg;
+          });
+          
+          set({ messages: updatedMessages });
+          
           set({ 
             syncStatus: `Phase B: Processing media queue: ${data.remaining} remaining... (Processed: ${processedCount})` 
           });
