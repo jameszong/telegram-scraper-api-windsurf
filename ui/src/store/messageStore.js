@@ -132,10 +132,11 @@ export const useMessageStore = create((set, get) => ({
             emptyBatches = 0; // Reset counter on successful batch
           }
           
-          // Add cooldown delay to prevent Worker CPU limits and Telegram rate limits
+          // Add dynamic cooldown to prevent Worker CPU limits and Telegram rate limits
           if (i < maxBatches - 1) { // Don't delay after last batch
-            console.log(`Debug: Adding 2-second cooldown after batch ${i + 1}`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            const cooldown = data.suggestedCooldown || 2000; // Use backend suggestion or fallback to 2s
+            console.log(`Debug: Waiting ${cooldown}ms for CPU recovery after batch ${i + 1}...`);
+            await new Promise(resolve => setTimeout(resolve, cooldown));
           }
           
           // Also stop if API explicitly says no more messages

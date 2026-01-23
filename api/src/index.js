@@ -205,6 +205,18 @@ app.get('/messages', async (c) => {
 app.post('/sync', async (c) => {
   const syncService = c.get('syncService');
   const result = await syncService.syncMessages();
+  
+  // Calculate dynamic cooldown to prevent Cloudflare 503 errors
+  const BASE_DELAY = 1000; // 1 second base delay
+  const MEDIA_PENALTY = 1500; // 1.5 seconds per media file
+  const mediaCount = result.media || 0;
+  const suggestedCooldown = BASE_DELAY + (mediaCount * MEDIA_PENALTY);
+  
+  // Add cooldown to response
+  result.suggestedCooldown = suggestedCooldown;
+  
+  console.log(`Debug: Sync complete - synced: ${result.synced}, media: ${mediaCount}, suggestedCooldown: ${suggestedCooldown}ms`);
+  
   return c.json(result);
 });
 

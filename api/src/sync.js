@@ -91,8 +91,9 @@ export class SyncService {
       
       // SMART AUTO-BACKFILL STRATEGY: Phase 1 (Updates) -> Phase 2 (History)
       let messages = [];
-      const limitNum = 20;
-      let isBackfillMode = false;
+      // Dynamic batch size: smaller for backfill to be safer
+      const isBackfillMode = earliestId > 1n && totalCount < Number(latestId - earliestId + 1n);
+      const limitNum = isBackfillMode ? 15 : 30; // Smaller limit for backfill mode
       
       try {
         // Phase 1: Try fetching updates from Top (Newest messages)
