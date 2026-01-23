@@ -387,8 +387,13 @@ export class SyncService {
       const messageBigInt = toBigInt(pendingMessage.telegram_message_id);
       console.log(`Debug: Fetching message ID: ${pendingMessage.telegram_message_id} -> ${messageBigInt}`);
       
+      // CRITICAL: GramJS requires Number for message IDs, not BigInt
+      // Convert BigInt to Number for GramJS (Safe for msg IDs < 2^53)
+      const msgIdNum = Number(pendingMessage.telegram_message_id);
+      console.log(`Debug: Converted to Number for GramJS: ${msgIdNum}`);
+      
       const messages = await client.getMessages(channel, {
-        ids: [messageBigInt]
+        ids: [msgIdNum]
       });
 
       if (!messages || messages.length === 0) {

@@ -246,23 +246,31 @@ app.post('/process-media', async (c) => {
   const syncService = c.get('syncService');
   
   try {
-    // Step 1: Fetch pending task
+    // Step 1: Fetch pending task with retry logic
+    // Prioritize pending, then retry failed items
     const pendingMessage = await c.env.DB.prepare(`
-      SELECT * FROM messages WHERE media_status = 'pending' LIMIT 1
+      SELECT * FROM messages 
+      WHERE media_status = 'pending' 
+      OR media_status = 'failed'
+      ORDER BY 
+        CASE WHEN media_status = 'pending' THEN 1 ELSE 2 END,
+        id DESC
+      LIMIT 1
     `).first();
 
     if (!pendingMessage) {
       return c.json({ success: true, remaining: 0, message: 'No pending media to process' });
     }
 
-    console.log(`Debug: Processing media for message ${pendingMessage.telegram_message_id}, type: ${pendingMessage.media_type}`);
+    console.log(`Debug: Processing media for message ${pendingMessage.telegram_message_id}, type: ${pendingMessage.media_type}, status: ${pendingMessage.media_status}`);
 
     // Step 2: Process the media
     const result = await syncService.processMediaMessage(pendingMessage);
 
-    // Step 3: Count remaining pending tasks
+    // Step 3: Count remaining pending tasks (including failed for retry)
     const remainingCount = await c.env.DB.prepare(`
-      SELECT COUNT(*) as count FROM messages WHERE media_status = 'pending'
+      SELECT COUNT(*) as count FROM messages 
+      WHERE media_status = 'pending' OR media_status = 'failed'
     `).first();
 
     return c.json({
