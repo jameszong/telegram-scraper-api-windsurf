@@ -49,12 +49,19 @@ app.use('/*', async (c, next) => {
   
   // Check access key (for frontend communication)
   if (accessKey) {
-    const storedKey = await c.env.DB.prepare("SELECT value FROM app_config WHERE key = 'ACCESS_KEY'").first();
-    if (!storedKey || !storedKey.value || storedKey.value !== accessKey) {
-      console.error('[Processor Auth] Invalid access key provided');
-      return c.json({ error: 'Invalid access key' }, 401);
+    // First try environment variable (from GitHub Actions secrets)
+    const envAccessKey = c.env.ACCESS_KEY;
+    if (envAccessKey && envAccessKey === accessKey) {
+      console.log('[Processor Auth] Access key validated from environment');
+    } else {
+      // Fallback to D1 database
+      const storedKey = await c.env.DB.prepare("SELECT value FROM app_config WHERE key = 'ACCESS_KEY'").first();
+      if (!storedKey || !storedKey.value || storedKey.value !== accessKey) {
+        console.error('[Processor Auth] Invalid access key provided');
+        return c.json({ error: 'Invalid access key' }, 401);
+      }
+      console.log('[Processor Auth] Access key validated from D1');
     }
-    console.log('[Processor Auth] Access key validated successfully');
   }
   
   await next();
