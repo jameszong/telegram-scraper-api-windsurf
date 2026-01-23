@@ -55,6 +55,12 @@ export const useMessageStore = create((set, get) => ({
         throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
       }
       
+      // Handle non-JSON responses (like HTML error pages)
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error(`Invalid response type: ${contentType || 'unknown'}`);
+      }
+      
       const data = await response.json();
       
       // Check if data exists and has success property
@@ -320,6 +326,10 @@ export const useMessageStore = create((set, get) => ({
       } catch (error) {
         console.error('[MessageStore] Polling error:', error);
         // Don't crash the component, just log and continue
+        // If it's a network error, we might want to slow down polling
+        if (error.message.includes('Network error') || error.message.includes('HTTP 5')) {
+          console.warn('[MessageStore] Network issue detected, continuing polling...');
+        }
       }
     }, 5000); // Poll every 5 seconds
 
