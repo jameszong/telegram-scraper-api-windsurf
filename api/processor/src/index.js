@@ -33,15 +33,15 @@ app.use('/*', async (c, next) => {
     return c.json({ error: 'Access key required' }, 401);
   }
   
-  // Validate access key against D1
-  const result = await c.env.DB.prepare(
-    'SELECT value FROM kv_store WHERE key = ?'
-  ).bind('access_key').first();
+  // CRITICAL FIX: Read ACCESS_KEY from D1 instead of environment variables
+  const storedKey = await c.env.DB.prepare("SELECT value FROM app_config WHERE key = 'ACCESS_KEY'").first();
   
-  if (!result || result.value !== accessKey) {
+  if (!storedKey || !storedKey.value || storedKey.value !== accessKey) {
+    console.error('[Processor Auth] Invalid access key provided');
     return c.json({ error: 'Invalid access key' }, 401);
   }
   
+  console.log('[Processor Auth] Access key validated successfully');
   await next();
 });
 

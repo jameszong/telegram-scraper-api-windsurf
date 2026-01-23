@@ -22,7 +22,8 @@ export class TelegramAuthService {
         { key: 'TELEGRAM_SESSION', value: this.env.TELEGRAM_SESSION || '' },
         { key: 'TELEGRAM_API_ID', value: this.env.TELEGRAM_API_ID?.toString() || '' },
         { key: 'TELEGRAM_API_HASH', value: this.env.TELEGRAM_API_HASH || '' },
-        { key: 'R2_PUBLIC_URL', value: this.env.R2_PUBLIC_URL || '' }
+        { key: 'R2_PUBLIC_URL', value: this.env.R2_PUBLIC_URL || '' },
+        { key: 'ACCESS_KEY', value: this.env.ACCESS_KEY || '' }
       ];
 
       for (const config of configs) {

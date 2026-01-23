@@ -1,17 +1,32 @@
 name = "telegram-viewer"
 main = "src/index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-09-23"
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
 
 # Bind D1 database (same as scanner)
 [[d1_databases]]
 binding = "DB"
-database_name = "telegram-archive"
-database_id = "your-database-id-here"  # IMPORTANT: Copy from scanner's wrangler.toml
+database_name = "tg-archive-db"
+database_id = "78d5f1bc-52ca-4aab-98c1-6e2a09f91c40"
 
 # Bind R2 bucket (same as scanner) - for media URL generation
 [[r2_buckets]]
 binding = "BUCKET"
-bucket_name = "telegram-media"  # IMPORTANT: Copy from scanner's wrangler.toml
+bucket_name = "tg-archive-bucket"
 
 # Variables (empty - will read from D1)
 # [vars]

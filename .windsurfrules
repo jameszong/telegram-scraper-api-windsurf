@@ -1,58 +1,58 @@
-# Windsurf Project Rules & Standards (v3.0) - The Async Architecture Update
+@.windsurfrules
 
-## 1. Core Philosophy: Decoupled & Async 🏗️
-- **Environment**: Cloudflare Workers (Free Tier Constraints: 10ms CPU / 30s Wall-time).
-- **Architecture**: **Split-Phase Processing**.
-  - **Phase A (Scanner)**: Text-only, high throughput, DB inserts only. **NO Downloads**.
-  - **Phase B (Processor)**: Media-heavy, single-item processing, R2 uploads.
-- **Goal**: Zero 503 errors via aggressive load shedding.
+**Update Project Rules to v4.0 (Microservices & Paid Plan)**
 
-## 2. Type Safety: The "BigInt" Iron Law 🛡️
-**Context**: Telegram IDs (64-bit) crash JS Numbers (53-bit).
-- **RULE 1: Helper Only**: Use `toBigInt(val)` wrapper. Never `BigInt()` directly.
-- **RULE 2: No Math Functions**: ⛔ `Math.min/max` are BANNED for IDs. Use `if (a < b)`.
-- **RULE 3: Strict Suffix**: Comparisons must use `n` suffix (e.g., `id > 0n`).
-- **RULE 4: JSON Polyfill**: Must exist at entry point to prevent serialization crashes.
+**Context:**
+The project architecture has fundamentally changed. We are now using Microservices, a Shared D1 Database for config, and Cloudflare Workers Paid Plan.
+Old rules about "10ms CPU limit" and "Artificial Delays" are obsolete.
 
-## 3. Telegram Sync Strategy (Reverse: False) 🔄
-- **Direction**: **Newest -> Oldest**. Fetch from Top, walk backwards.
-- **Pagination**: `client.iterMessages({ reverse: false, offsetId: ... })`.
-- **Batch Sizes**:
-  - **Phase A (Text)**: Limit **50**. (Fast metadata indexing).
-  - **Phase B (Media)**: Limit **1** (or small queue). (Heavy lifting).
+**Action:**
+COMPLETELY OVERWRITE `.windsurfrules` with the following content:
 
-## 4. Media Handling: The "Split" Protocol ⚡
-**Context**: Downloading media in Phase A causes timeouts.
-- **Protocol A (Detection)**:
-  - In `/sync`: Check `if (msg.media)`.
-  - Action: Mark `media_status = 'pending'`, save `media_type`.
-  - **CRITICAL**: Do NOT call `downloadMedia`. Do NOT assume "no download = no media".
-- **Protocol B (Upload)**:
-  - In `/process-media`: Query `WHERE media_status = 'pending'`.
-  - Validation: Must check `buffer && buffer.length > 0` before R2 upload.
-  - Commit: Update DB to `completed` ONLY after successful R2 PUT.
-- **Delivery**:
-  - Worker returns **Public URLs** (`${R2_PUBLIC_URL}/${key}`), NEVER binary blobs.
+# Windsurf Project Rules & Standards (v4.0) - Microservices & Paid Plan
 
-## 5. Backpressure & Stability 📉
-**Context**: Avoiding Rate Limits and CPU Exhaustion.
-- **Dynamic Cooldown**: API must return `suggestedCooldown`.
-  - **Text Mode**: ~200ms (Fast).
-  - **Media Mode**: ~1500ms+ (Slow).
-- **Frontend Logic**:
-  - Must respect `suggestedCooldown`.
-  - Must render `media_status='pending'` as a placeholder ("Queued").
-  - Must update UI state incrementally (don't wait for full batch).
+## 1. Architecture: Microservices on Cloudflare 🏗️
+- **Structure**: Three distinct Workers sharing resources.
+  1.  **Scanner (`api/`)**: Master Node. Handles Phase A (Sync), Auth, and **Config Seeding** (Env Vars -> D1).
+  2.  **Processor (`api/processor/`)**: Media Downloader. Handles Phase B. Reads credentials from D1.
+  3.  **Viewer (`api/viewer/`)**: Read-Only API. Serves UI requests. No Telegram connection.
+- **Shared Resources**:
+  - **D1 Database**: All workers bind to the SAME `database_id`.
+  - **R2 Bucket**: All workers bind to the SAME `bucket_name`.
+  - **Config Table**: `app_config` table in D1 is the Source of Truth for Secrets (Session/Access Keys).
 
-## 6. Database Standards (D1)
-- **Schema**:
-  - `id` (BigInt/String), `media_status` (Text), `media_key` (Text/Null).
-- **Operations**:
-  - Reads: Handle `null` results gracefully.
-  - Writes: `INSERT OR REPLACE`.
-  - **Wait**: Always `await` DB calls.
+## 2. Environment: Paid Plan (Unbound) 🚀
+- **Constraints**: 
+  - CPU: **30s** (Unbound).
+  - Memory: **128MB**.
+- **Performance Strategy**:
+  - **NO Artificial Delays**: Remove `setTimeout` sleeps. Run as fast as GramJS allows.
+  - **Batching**: Use larger batch sizes (e.g., 50-100 messages).
+  - **Timeouts**: Set fetch timeouts to **60s** for large media.
 
-## 7. Logging & Debugging
-- **Format**: `[Phase A/B] - Action - Details`.
-- **Constraint**: Do NOT log every message ID in loops (Console Spam). Log batch summaries.
-- **BigInt**: `.toString()` before logging.
+## 3. Telegram & Media Strategy 📸
+- **Phase A (Scanner)**:
+  - Sync Metadata only. Insert to DB with `media_status='pending'`.
+  - **NEVER** download media in Phase A.
+- **Phase B (Processor)**:
+  - **Filter**: **PHOTOS ONLY**. Explicitly skip Videos/Documents.
+  - **Size Limit**: **20MB** (High-Res Photos allowed).
+  - **Auth**: Must fetch `TELEGRAM_SESSION` and `ACCESS_KEY` from D1 `app_config`, NOT `c.env`.
+  - **Concurrency**: Sequential processing (due to GramJS session lock), but zero wait time between items.
+
+## 4. Coding Standards 🛡️
+- **BigInt Safety**:
+  - Telegram IDs are `BigInt`. Always use `toBigInt()` wrapper.
+  - **BANNED**: `Math.min/max` on IDs.
+  - **JSON**: Polyfill must be present at entry points.
+- **React/Zustand**:
+  - **No Patching**: When modifying Stores (`channelStore`, `messageStore`), ask for **Complete Overwrite**.
+  - **Imports**: Strict check on `export default` vs `export const`.
+
+## 5. Deployment & Ops ⚙️
+- **Deployment**: ALWAYS use `./deploy_all.sh`.
+  - Never run `wrangler deploy` manually for individual workers unless debugging.
+  - Script handles D1 migrations and UI URL injection.
+- **Observability**:
+  - Logs enabled in `wrangler.toml` for all workers.
+  - Head sampling rate: 1.
