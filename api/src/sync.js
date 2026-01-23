@@ -407,6 +407,36 @@ export class SyncService {
 
       console.log(`Debug: Downloading media for message ${message.id}, type: ${message.media.className}`);
 
+      // CRITICAL: Size limit check to prevent CPU limits
+      const MAX_SIZE = 300 * 1024; // 300KB
+      let fileSize = 0;
+      
+      if (message.media.document) {
+        // Safe cast from BigInt to Number for size comparison
+        fileSize = Number(message.media.document.size);
+        console.log(`Debug: Document size: ${fileSize} bytes`);
+      }
+      // Note: Photos (MessageMediaPhoto) don't have a single 'size' attribute and are usually safe
+      // Treat photos as fileSize = 0 (always download)
+      
+      if (fileSize > MAX_SIZE) {
+        console.log(`Debug: Skipping media ${message.id}: Size ${fileSize} > 300KB limit`);
+        
+        // Update DB to mark as skipped due to size
+        await this.env.DB.prepare(`
+          UPDATE messages SET media_status = 'skipped_large' WHERE id = ?
+        `).bind(pendingMessage.id).run();
+        
+        return {
+          success: true,
+          skipped: true,
+          reason: `File size ${fileSize} bytes exceeds 300KB limit`,
+          mediaKey: null
+        };
+      }
+      
+      console.log(`Debug: Media size check passed (${fileSize} bytes <= 300KB), proceeding with download`);
+
       // Download media with timeout
       const downloadPromise = client.downloadMedia(message, { workers: 1 });
       const timeoutPromise = new Promise((_, reject) => 

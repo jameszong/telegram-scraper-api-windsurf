@@ -199,8 +199,18 @@ app.get('/messages', async (c) => {
           media_url: `${r2PublicUrl}/${message.media_key}`
         };
       }
-      return message;
+      // Explicitly set media_url to null for consistency
+      return {
+        ...message,
+        media_url: null
+      };
     });
+  } else if (result.messages.length > 0) {
+    // Ensure media_url field exists even if R2_PUBLIC_URL is not set
+    result.messages = result.messages.map(message => ({
+      ...message,
+      media_url: message.media_key ? null : null
+    }));
   }
   
   // Debug: Log fetched data structure
@@ -279,6 +289,8 @@ app.post('/process-media', async (c) => {
       messageId: pendingMessage.telegram_message_id,
       mediaType: pendingMessage.media_type,
       remaining: remainingCount.count,
+      skipped: result.skipped || false,
+      skipReason: result.reason || null,
       result: result
     });
 
