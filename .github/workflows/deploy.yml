@@ -57,6 +57,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/processor'
+          secrets: |
+            ACCESS_KEY
+        env:
+          ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
 
       - name: Deploy Viewer
         uses: cloudflare/wrangler-action@v3
@@ -64,6 +68,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/viewer'
+          secrets: |
+            ACCESS_KEY
+        env:
+          ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
 
       - name: Generate Frontend Config
         env:
