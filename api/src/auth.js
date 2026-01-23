@@ -135,6 +135,18 @@ export class TelegramAuthService {
           'INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)'
         ).bind('session_string', finalSessionString).run();
 
+        // CRITICAL: Immediately sync new session to app_config for Processor
+        console.log('[Auth] Syncing new session to D1 app_config...');
+        await this.env.DB.prepare(`
+          INSERT INTO app_config (key, value, updated_at) 
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET 
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+        `).bind('TELEGRAM_SESSION', finalSessionString).run();
+        
+        console.log('[Auth] New session synced to D1 app_config successfully');
+
         await client.disconnect();
 
         return {
@@ -199,6 +211,18 @@ export class TelegramAuthService {
       await this.env.DB.prepare(
         'INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)'
       ).bind('session_string', finalSessionString).run();
+      
+      // CRITICAL: Immediately sync new session to app_config for Processor
+      console.log('[Auth] Syncing 2FA session to D1 app_config...');
+      await this.env.DB.prepare(`
+        INSERT INTO app_config (key, value, updated_at) 
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET 
+          value = excluded.value,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind('TELEGRAM_SESSION', finalSessionString).run();
+      
+      console.log('[Auth] 2FA session synced to D1 app_config successfully');
       
       // Clean up partial session
       await this.env.DB.prepare(

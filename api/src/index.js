@@ -368,6 +368,67 @@ app.get('/debug/schema', async (c) => {
   }
 });
 
+// Debug endpoint to force seed credentials to D1
+app.get('/debug/seed-config', async (c) => {
+  const authService = c.get('authService');
+  
+  try {
+    console.log('[Debug] Force seeding credentials to D1...');
+    
+    // Read credentials from environment
+    const configs = [
+      { key: 'TELEGRAM_API_ID', value: c.env.TELEGRAM_API_ID?.toString() || '' },
+      { key: 'TELEGRAM_API_HASH', value: c.env.TELEGRAM_API_HASH || '' },
+      { key: 'R2_PUBLIC_URL', value: c.env.R2_PUBLIC_URL || '' },
+      { key: 'ACCESS_KEY', value: c.env.ACCESS_KEY || '' }
+    ];
+    
+    // Get session from kv_store
+    let sessionString = '';
+    try {
+      const sessionResult = await c.env.DB.prepare(
+        'SELECT value FROM kv_store WHERE key = ?'
+      ).bind('session_string').first();
+      sessionString = sessionResult?.value || '';
+      configs.push({ key: 'TELEGRAM_SESSION', value: sessionString });
+    } catch (error) {
+      console.log('[Debug] Could not read session from kv_store:', error.message);
+      configs.push({ key: 'TELEGRAM_SESSION', value: '' });
+    }
+    
+    const seededKeys = [];
+    
+    // Write each config to D1
+    for (const config of configs) {
+      await c.env.DB.prepare(`
+        INSERT INTO app_config (key, value, updated_at) 
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET 
+          value = excluded.value,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(config.key, config.value).run();
+      
+      if (config.value) {
+        seededKeys.push(config.key);
+        console.log(`[Debug] Seeded ${config.key}:`, config.key === 'TELEGRAM_SESSION' ? '***SESSION***' : config.value);
+      } else {
+        console.log(`[Debug] Skipped ${config.key}: empty value`);
+      }
+    }
+    
+    console.log(`[Debug] Successfully seeded ${seededKeys.length} configurations to D1`);
+    
+    return c.json({ 
+      success: true, 
+      seeded: seededKeys,
+      message: `Seeded ${seededKeys.length} configurations to D1`
+    });
+  } catch (error) {
+    console.error('[Debug] Failed to seed config:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
 // Temporary admin cleanup endpoint
 app.post('/admin/clear-r2', async (c) => {
   try {
