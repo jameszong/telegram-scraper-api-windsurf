@@ -13,11 +13,6 @@ head_sampling_rate = 1
 persist = true
 invocation_logs = true
 
-[observability.traces]
-enabled = false
-persist = true
-head_sampling_rate = 1
-
 # Bind D1 database (same as scanner)
 [[d1_databases]]
 binding = "DB"
