@@ -13,13 +13,25 @@ export class TelegramAuthService {
     }
   }
 
-  // CRITICAL: Sync environment variables to D1 for sharing with other workers
+  // CRITICAL: Sync environment variables AND session to D1 for sharing with other workers
   async syncEnvToDb() {
     try {
       console.log('[Config Sync] Syncing environment variables to D1...');
       
+      // Get the actual session from kv_store (not environment variable)
+      let sessionString = '';
+      try {
+        const sessionResult = await this.env.DB.prepare(
+          'SELECT value FROM kv_store WHERE key = ?'
+        ).bind('session_string').first();
+        sessionString = sessionResult?.value || '';
+        console.log('[Config Sync] Found session in kv_store:', !!sessionString);
+      } catch (error) {
+        console.log('[Config Sync] Could not read session from kv_store:', error.message);
+      }
+      
       const configs = [
-        { key: 'TELEGRAM_SESSION', value: this.env.TELEGRAM_SESSION || '' },
+        { key: 'TELEGRAM_SESSION', value: sessionString },
         { key: 'TELEGRAM_API_ID', value: this.env.TELEGRAM_API_ID?.toString() || '' },
         { key: 'TELEGRAM_API_HASH', value: this.env.TELEGRAM_API_HASH || '' },
         { key: 'R2_PUBLIC_URL', value: this.env.R2_PUBLIC_URL || '' },
@@ -34,6 +46,8 @@ export class TelegramAuthService {
             value = excluded.value,
             updated_at = CURRENT_TIMESTAMP
         `).bind(config.key, config.value).run();
+        
+        console.log(`[Config Sync] Synced ${config.key}:`, config.key === 'TELEGRAM_SESSION' ? !!config.value : config.value);
       }
 
       console.log('[Config Sync] Successfully synced configuration to D1');
