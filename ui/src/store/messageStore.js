@@ -86,95 +86,146 @@ export const useMessageStore = create((set, get) => ({
   },
   
   syncMessages: async () => {
-    set({ isSyncing: true, syncProgress: 0, syncStatus: 'Starting sequential sync...', error: null });
+    set({ isSyncing: true, syncProgress: 0, syncStatus: 'Starting sync...', error: null });
     
     try {
-      let totalSynced = 0;
-      let totalMedia = 0;
-      const maxBatches = 10;  // Sync up to 10 messages
-      let emptyBatches = 0;  // Track consecutive empty batches
+      // Phase A: Fast Text Sync
+      await this.phaseATextSync();
       
-      for (let i = 0; i < maxBatches; i++) {
-        // Update progress
-        set({ 
-          syncProgress: i + 1, 
-          syncStatus: `Syncing batch ${i + 1}/${maxBatches}...` 
-        });
-        
-        console.log(`Debug: Syncing batch ${i + 1}/${maxBatches}`);
-        
-        const response = await authenticatedFetch(`${API_BASE}/sync`, {
-          method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          totalSynced += data.synced || 0;
-          totalMedia += data.media || 0;
-          
-          console.log(`Debug: Batch ${i + 1} result: synced=${data.synced}, media=${data.media}, hasNewMessages=${data.hasNewMessages}`);
-          
-          // More resilient stopping logic
-          if (data.synced === 0) {
-            emptyBatches++;
-            console.log(`Debug: Empty batch ${i + 1}, consecutive empty: ${emptyBatches}`);
-            
-            // Only stop after 2 consecutive empty batches
-            if (emptyBatches >= 2) {
-              console.log(`Debug: Stopping after ${emptyBatches} consecutive empty batches`);
-              set({ 
-                syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.` 
-              });
-              break;
-            }
-          } else {
-            emptyBatches = 0; // Reset counter on successful batch
-          }
-          
-          // Add dynamic cooldown to prevent Worker CPU limits and Telegram rate limits
-          if (i < maxBatches - 1) { // Don't delay after last batch
-            const cooldown = data.suggestedCooldown || 2000; // Use backend suggestion or fallback to 2s
-            console.log(`Debug: Waiting ${cooldown}ms for CPU recovery after batch ${i + 1}...`);
-            await new Promise(resolve => setTimeout(resolve, cooldown));
-          }
-          
-          // Also stop if API explicitly says no more messages
-          if (!data.hasNewMessages) {
-            console.log(`Debug: No more messages to sync (API confirmation), stopping at batch ${i + 1}`);
-            set({ 
-              syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.` 
-            });
-            break;
-          }
-        } else {
-          console.error(`Debug: Batch ${i + 1} failed: ${data.error}`);
-          set({ 
-            error: data.error,
-            syncStatus: `Sync failed at batch ${i + 1}: ${data.error}` 
-          });
-          break;
-        }
-      }
+      // Phase B: Media Processing Queue
+      await this.phaseBMediaProcessing();
       
-      // Reset and fetch messages after sync
+      // Final refresh to show completed media
       const { fetchMessages } = get();
       await fetchMessages(50, true);
       
       set({ 
-        isSyncing: false,
-        syncStatus: `Sync complete! Processed ${totalSynced} messages with ${totalMedia} media files.`
+        isSyncing: false, 
+        syncStatus: 'Sync complete! All messages and media processed.' 
       });
       
-      return { success: true, synced: totalSynced, media: totalMedia };
     } catch (error) {
-      console.error('Sequential sync error:', error);
+      console.error('Sync error:', error);
       set({ 
-        error: 'Failed to sync messages',
-        isSyncing: false,
-        syncStatus: 'Sync failed due to network error'
+        isSyncing: false, 
+        error: 'Sync failed: ' + error.message,
+        syncStatus: 'Sync failed'
       });
-      return { success: false, error: 'Network error' };
     }
-  }
+  },
+
+  phaseATextSync: async () => {
+    const maxBatches = 15; // Increased for faster text sync
+    let emptyBatches = 0;
+    let totalSynced = 0;
+    
+    set({ syncStatus: 'Phase A: Syncing messages...' });
+    
+    for (let i = 0; i < maxBatches; i++) {
+      set({ 
+        syncProgress: i + 1, 
+        syncStatus: `Phase A: Syncing batch ${i + 1}/${maxBatches}...` 
+      });
+      
+      console.log(`Debug: Phase A - Syncing batch ${i + 1}/${maxBatches}`);
+      
+      const response = await authenticatedFetch(`${API_BASE}/sync`, {
+        method: 'POST'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        totalSynced += data.synced || 0;
+        console.log(`Debug: Phase A - Batch ${i + 1} result: synced=${data.synced}, hasNewMessages=${data.hasNewMessages}`);
+        
+        // More resilient stopping logic
+        if (data.synced === 0) {
+          emptyBatches++;
+          console.log(`Debug: Phase A - Empty batch ${i + 1}, consecutive empty: ${emptyBatches}`);
+          
+          // Only stop after 2 consecutive empty batches
+          if (emptyBatches >= 2) {
+            console.log(`Debug: Phase A - Stopping after ${emptyBatches} consecutive empty batches`);
+            break;
+          }
+        } else {
+          emptyBatches = 0; // Reset counter on successful batch
+        }
+        
+        // Also stop if API explicitly says no more messages
+        if (!data.hasNewMessages) {
+          console.log(`Debug: Phase A - No more messages to sync (API confirmation), stopping at batch ${i + 1}`);
+          break;
+        }
+        
+        // Short cooldown for lightweight text sync
+        if (i < maxBatches - 1) {
+          const cooldown = data.suggestedCooldown || 500; // Short delay for text-only
+          console.log(`Debug: Phase A - Waiting ${cooldown}ms before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, cooldown));
+        }
+      } else {
+        console.error(`Debug: Phase A - Batch ${i + 1} failed: ${data.error}`);
+        throw new Error(`Phase A sync failed: ${data.error}`);
+      }
+    }
+    
+    // Refresh messages after text sync to show new text immediately
+    const { fetchMessages } = get();
+    await fetchMessages(50, true);
+    
+    console.log(`Debug: Phase A completed - Total synced: ${totalSynced}`);
+  },
+
+  phaseBMediaProcessing: async () => {
+    set({ syncStatus: 'Phase B: Processing media queue...' });
+    
+    let processedCount = 0;
+    const maxMediaBatches = 50; // Process up to 50 media files
+    
+    for (let i = 0; i < maxMediaBatches; i++) {
+      set({ 
+        syncProgress: i + 1, 
+        syncStatus: `Phase B: Processing media ${i + 1}/${maxMediaBatches}...` 
+      });
+      
+      console.log(`Debug: Phase B - Processing media batch ${i + 1}/${maxMediaBatches}`);
+      
+      const response = await authenticatedFetch(`${API_BASE}/process-media`, {
+        method: 'POST'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        if (data.remaining === 0) {
+          console.log(`Debug: Phase B - No more media to process`);
+          set({ 
+            syncStatus: `Phase B: Media processing complete! Processed ${processedCount} items.` 
+          });
+          break;
+        }
+        
+        if (data.processedId) {
+          processedCount++;
+          console.log(`Debug: Phase B - Processed media for message ${data.messageId}, ${data.remaining} remaining`);
+          set({ 
+            syncStatus: `Phase B: Processing media queue: ${data.remaining} remaining... (Processed: ${processedCount})` 
+          });
+        }
+        
+        // Dynamic cooldown for media processing (CPU intensive)
+        const cooldown = 2000; // 2 second delay for CPU recovery
+        console.log(`Debug: Phase B - Waiting ${cooldown}ms for CPU recovery...`);
+        await new Promise(resolve => setTimeout(resolve, cooldown));
+      } else {
+        console.error(`Debug: Phase B - Media processing failed: ${data.error}`);
+        // Don't throw error for media processing failures, just continue
+        console.log(`Debug: Phase B - Continuing despite media processing error...`);
+      }
+    }
+    
+    console.log(`Debug: Phase B completed - Total media processed: ${processedCount}`);
+  },
 }));
