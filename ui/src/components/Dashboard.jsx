@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { useChannelStore } from '../store/channelStore';
 import { useMessageStore } from '../store/messageStore';
 import { ChannelSelector } from './ChannelSelector';
-import { MessageGallery } from './MessageGallery';
+import MessageGallery from './MessageGallery';
 import { Button } from './ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { LogOut, RefreshCw, Loader2, Hash, Archive } from 'lucide-react';
