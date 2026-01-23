@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export const useAccessKeyStore = create()(
+export const useAccessKeyStore = create(
   persist(
     (set, get) => ({
       // State
@@ -39,7 +39,7 @@ export const useAccessKeyStore = create()(
       partialize: (state) => ({ 
         accessKey: state.accessKey,
         isUnlocked: state.isUnlocked 
-      }),
+      })
     }
   )
 );
