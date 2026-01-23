@@ -33,13 +33,15 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
           command: d1 migrations apply DB --remote
+          wranglerVersion: '4'
 
-      - name: Deploy Scanner
+      - name: Deploy Scanner (Master)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
+          wranglerVersion: '4'
           secrets: |
             TELEGRAM_API_ID
             TELEGRAM_API_HASH
@@ -57,6 +59,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/processor'
+          wranglerVersion: '4'
 
       - name: Deploy Viewer
         uses: cloudflare/wrangler-action@v3
@@ -64,6 +67,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/viewer'
+          wranglerVersion: '4'
 
       - name: Generate Frontend Config
         env:
@@ -72,11 +76,11 @@ jobs:
           SCANNER_URL="https://telegram-archiver-api.$SUBDOMAIN.workers.dev"
           PROCESSOR_URL="https://telegram-processor.$SUBDOMAIN.workers.dev"
           VIEWER_URL="https://telegram-viewer.$SUBDOMAIN.workers.dev"
-          cat > ui/src/utils/api.js <<EOL
+          cat > ui/src/utils/api.js <<EOF
           export const SCANNER_URL = "$SCANNER_URL";
           export const PROCESSOR_URL = "$PROCESSOR_URL";
           export const VIEWER_URL = "$VIEWER_URL";
-          EOL
+          EOF
 
       - name: Build Frontend
         working-directory: 'ui'
@@ -89,3 +93,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'ui'
           command: pages deploy dist --project-name telegram-archiver-ui
+          wranglerVersion: '4'
