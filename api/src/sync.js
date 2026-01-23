@@ -378,11 +378,17 @@ export class SyncService {
 
       // Get channel entity
       const channelBigInt = toBigInt(pendingMessage.chat_id);
+      console.log(`Debug: Resolving channel entity for chat_id: ${pendingMessage.chat_id} -> ${channelBigInt}`);
+      
       const channel = await client.getEntity(channelBigInt);
+      console.log(`Debug: Successfully resolved channel entity`);
 
       // Fetch the specific message
+      const messageBigInt = toBigInt(pendingMessage.telegram_message_id);
+      console.log(`Debug: Fetching message ID: ${pendingMessage.telegram_message_id} -> ${messageBigInt}`);
+      
       const messages = await client.getMessages(channel, {
-        ids: [toBigInt(pendingMessage.telegram_message_id)]
+        ids: [messageBigInt]
       });
 
       if (!messages || messages.length === 0) {

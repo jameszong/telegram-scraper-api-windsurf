@@ -26,6 +26,22 @@ export const MessageGallery = () => {
            !text.startsWith('[Service Message]');
   });
   
+  // Load history on mount when channel changes
+  useEffect(() => {
+    if (!selectedChannel || !selectedChannel.id) return;
+    
+    const loadHistory = async () => {
+      console.log(`Frontend: Loading history for channel ${selectedChannel.id}`);
+      try {
+        await fetchMessages(50, true, selectedChannel.id);
+      } catch (error) {
+        console.error('Frontend: History fetch failed:', error);
+      }
+    };
+    
+    loadHistory();
+  }, [selectedChannel?.id, fetchMessages]);
+
   // Debug: Log when messages change
   useEffect(() => {
     console.log('Frontend: Messages updated:', messages.length, 'total, valid:', validMessages.length);
