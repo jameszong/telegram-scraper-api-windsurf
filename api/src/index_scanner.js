@@ -24,7 +24,9 @@ app.use('/*', async (c, next) => {
   
   // Public endpoints
   const publicPaths = ['/', '/health'];
-  if (publicPaths.includes(c.req.path)) {
+  const currentPath = new URL(c.req.url).pathname;
+  
+  if (publicPaths.includes(currentPath)) {
     return next();
   }
   
