@@ -187,6 +187,14 @@ app.get('/messages', async (c) => {
   
   console.log(`Debug: Fetching messages for channel ${channelId}, limit: ${limit}, offset: ${offset}`);
   
+  // CRITICAL FIX: Count total messages for pagination
+  const totalResult = await c.env.DB.prepare(`
+    SELECT COUNT(*) as count FROM messages WHERE chat_id = ?
+  `).bind(channelId).first();
+  const total = totalResult?.count || 0;
+  
+  console.log(`Debug: Total messages for channel ${channelId}: ${total}`);
+  
   const result = await syncService.getArchivedMessages(channelId, limit, offset);
   
   // Add R2 public URLs to messages with media
@@ -222,7 +230,17 @@ app.get('/messages', async (c) => {
     console.log('Debug: Sample grouped_id:', result.messages[0].grouped_id);
   }
   
-  return c.json(result);
+  // CRITICAL FIX: Return pagination data
+  const page = Math.floor(offset / limit) + 1;
+  return c.json({
+    ...result,
+    pagination: {
+      total,
+      page,
+      limit,
+      hasMore: offset + limit < total
+    }
+  });
 });
 
 // Sync routes
@@ -276,6 +294,24 @@ app.post('/process-media', async (c) => {
 
     // Step 2: Process the media
     const result = await syncService.processMediaMessage(pendingMessage);
+
+    // CRITICAL FIX: Update DB status for skipped items to prevent infinite loops
+    if (result.skipped) {
+      console.log(`[Phase B] Updating DB status for skipped message ${pendingMessage.telegram_message_id}: ${result.reason}`);
+      
+      let skipStatus;
+      if (result.reason && result.reason.includes('Non-photo media type')) {
+        skipStatus = 'skipped_type'; // Non-photo media
+      } else if (result.reason && result.reason.includes('exceeds 20MB limit')) {
+        skipStatus = 'skipped_large'; // Too large photos
+      } else {
+        skipStatus = 'skipped'; // Generic skip
+      }
+      
+      await c.env.DB.prepare(`
+        UPDATE messages SET media_status = ? WHERE id = ?
+      `).bind(skipStatus, pendingMessage.id).run();
+    }
 
     // Step 3: Count remaining pending tasks (including failed for retry)
     const remainingCount = await c.env.DB.prepare(`

@@ -12,6 +12,7 @@ export const useMessageStore = create((set, get) => ({
   error: null,
   hasMore: true,
   offset: 0,
+  total: null, // Add total count for pagination
   
   // Actions
   setLoading: (loading) => set({ isLoading: loading }),
@@ -50,24 +51,29 @@ export const useMessageStore = create((set, get) => ({
       
       if (data.success) {
         const fetchedMessages = data.messages || [];
-        const hasMore = fetchedMessages.length === limit;
+        // CRITICAL FIX: Use pagination data from backend
+        const pagination = data.pagination || {};
+        const hasMore = pagination.hasMore !== undefined ? pagination.hasMore : fetchedMessages.length === limit;
         
         if (reset) {
           set({ 
             messages: fetchedMessages,
             offset: fetchedMessages.length,
             hasMore,
-            isLoading: false 
+            isLoading: false,
+            total: pagination.total || null
           });
         } else {
           set({ 
             messages: [...messages, ...fetchedMessages],
-            offset: currentOffset + fetchedMessages.length,
+            offset: offset + fetchedMessages.length,
             hasMore,
-            isLoading: false 
+            isLoading: false,
+            total: pagination.total || null
           });
         }
         
+        console.log(`Frontend: Fetched ${fetchedMessages.length} messages, total: ${pagination.total}, hasMore: ${hasMore}`);
         return { success: true, messages: fetchedMessages, hasMore };
       } else {
         set({ 
