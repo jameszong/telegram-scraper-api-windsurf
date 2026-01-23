@@ -7,14 +7,29 @@ export class ProcessorAuthService {
     this.credentials = null;
   }
 
-  // CRITICAL: Fetch credentials from D1 instead of environment variables
+  // PRIORITY: Use environment variables first, fallback to D1
   async getCredentials() {
     if (this.credentials) {
       return this.credentials;
     }
 
     try {
-      console.log('[Processor Auth] Fetching credentials from D1...');
+      console.log('[Processor Auth] Fetching credentials...');
+      
+      // First try environment variables (from GitHub Actions secrets)
+      if (this.env.TELEGRAM_API_ID && this.env.TELEGRAM_API_HASH) {
+        console.log('[Processor Auth] Using credentials from environment variables');
+        this.credentials = {
+          session: this.env.TELEGRAM_SESSION || '',
+          apiId: parseInt(this.env.TELEGRAM_API_ID),
+          apiHash: this.env.TELEGRAM_API_HASH,
+          r2PublicUrl: this.env.R2_PUBLIC_URL || ''
+        };
+        return this.credentials;
+      }
+      
+      // Fallback to D1 database
+      console.log('[Processor Auth] Environment variables not found, trying D1...');
       
       const sessionResult = await this.env.DB.prepare(
         'SELECT value FROM app_config WHERE key = ?'
@@ -33,7 +48,7 @@ export class ProcessorAuthService {
       ).bind('R2_PUBLIC_URL').first();
 
       if (!apiIdResult?.value || !apiHashResult?.value) {
-        throw new Error('Telegram credentials not found in D1 app_config table');
+        throw new Error('Telegram credentials not found in environment variables or D1 app_config table');
       }
 
       this.credentials = {
