@@ -105,5 +105,5 @@ export const useChannelStore = create(
   {
     name: 'channel-storage',
     partialize: (state) => ({ selectedChannel: state.selectedChannel })
-  }
+  })
 );
