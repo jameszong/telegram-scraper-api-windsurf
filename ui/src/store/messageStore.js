@@ -138,7 +138,15 @@ export const useMessageStore = create((set, get) => ({
       
       if (data.success) {
         totalSynced += data.synced || 0;
-        console.log(`Debug: Phase A - Batch ${i + 1} result: synced=${data.synced}, hasNewMessages=${data.hasNewMessages}`);
+        console.log(`Debug: Phase A - Batch ${i + 1} result: synced=${data.synced}, hasNewMessages=${data.hasNewMessages}, messages_returned=${data.messages?.length || 0}`);
+        
+        // IMMEDIATE UPDATE: Add new messages to state for instant visibility
+        if (data.messages && data.messages.length > 0) {
+          const { messages } = get();
+          const newMessages = [...data.messages, ...messages];
+          set({ messages: newMessages });
+          console.log(`Frontend: Phase A - Immediately updated UI with ${data.messages.length} new messages. Total: ${newMessages.length}`);
+        }
         
         // More resilient stopping logic
         if (data.synced === 0) {
@@ -172,10 +180,7 @@ export const useMessageStore = create((set, get) => ({
       }
     }
     
-    // Refresh messages after text sync to show new text immediately
-    const { fetchMessages } = get();
-    await fetchMessages(50, true);
-    
+    // No need to refresh messages - we already updated them immediately during Phase A
     console.log(`Debug: Phase A completed - Total synced: ${totalSynced}`);
   },
 

@@ -221,20 +221,20 @@ app.post('/sync', async (c) => {
   const result = await syncService.syncMessages();
   
   // Calculate dynamic cooldown to prevent Cloudflare 503 errors
-  const BASE_DELAY = 500; // 500ms base delay for text-only
-  const MEDIA_PENALTY = 1500; // 1.5 seconds per media file
+  // Phase A is text-only, should be near-instant (max 200ms)
   const mediaCount = result.media || 0;
   
-  // Optimize: Force short cooldown for text-only batches
+  // CRITICAL: Force fast cooldown for Phase A (text-only sync)
+  // Only penalize actual completed downloads, not pending media
   let suggestedCooldown;
   if (mediaCount === 0) {
-    suggestedCooldown = 500; // Fast sync for text-only batches
+    suggestedCooldown = 200; // Max 200ms for text-only batches
   } else {
-    suggestedCooldown = BASE_DELAY + (mediaCount * MEDIA_PENALTY);
+    // This should rarely happen in Phase A since we don't download media
+    suggestedCooldown = 200; // Still keep it fast
   }
   
-  // Add cooldown to response
-  result.suggestedCooldown = suggestedCooldown;
+  console.log(`Debug: Phase A sync - synced: ${result.synced}, media_pending: ${mediaCount}, forced_cooldown: ${suggestedCooldown}ms`);
   
   console.log(`Debug: Sync complete - synced: ${result.synced}, media: ${mediaCount}, suggestedCooldown: ${suggestedCooldown}ms`);
   

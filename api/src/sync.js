@@ -222,11 +222,25 @@ export class SyncService {
 
       console.log(`Debug: Successfully synced ${syncedCount} messages with ${mediaCount} media files`);
 
+      // Return processed messages for immediate frontend update
+      const processedMessages = messages.map(msg => ({
+        id: msg.id,
+        telegram_message_id: msg.id.toString(),
+        chat_id: String(targetChannelId),
+        text: msg.text || '',
+        date: new Date(Number(msg.date) * 1000).toISOString(),
+        grouped_id: msg.groupedId ? msg.groupedId.toString() : null,
+        media_status: msg.media ? 'pending' : 'none',
+        media_type: msg.media ? msg.media.className : null,
+        media_url: null // Will be populated in Phase B
+      }));
+
       return {
         success: true,
         synced: syncedCount,
         media: mediaCount,
         hasNewMessages: messages.length > 0,  // Indicate if there are more Messages
+        messages: processedMessages, // Add processed messages array
         message: `Successfully synced ${syncedCount} messages with ${mediaCount} media files`
       };
     } catch (error) {
