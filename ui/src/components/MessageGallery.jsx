@@ -16,6 +16,7 @@ const MessageGallery = () => {
 
   // Helper to get channel name by ID
   const getChannelName = (id) => {
+    if (!channels || !id) return id || 'Unknown';
     const ch = channels.find(c => String(c.id) === String(id));
     return ch ? ch.title : id;
   };
@@ -132,6 +133,9 @@ const MessageGallery = () => {
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">
               ID
             </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
+              Channel
+            </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">
               Time
             </th>
@@ -146,13 +150,13 @@ const MessageGallery = () => {
         <tbody className="bg-white dark:bg-zinc-900 divide-y divide-gray-200 dark:divide-zinc-800">
           {isLoading && validMessages.length === 0 ? (
             <tr>
-              <td colSpan="4" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+              <td colSpan="5" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                 Loading...
               </td>
             </tr>
           ) : validMessages.length === 0 ? (
             <tr>
-              <td colSpan="4" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+              <td colSpan="5" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                 No messages (Select channel or click Sync)
               </td>
             </tr>
@@ -161,6 +165,9 @@ const MessageGallery = () => {
               <tr key={msg.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {msg.telegram_message_id}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                  {getChannelName(msg.chat_id)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {formatDate(msg.date)}

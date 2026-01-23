@@ -93,7 +93,8 @@ export class SyncService {
       let messages = [];
       // Dynamic batch size: smaller for backfill to be safer
       let isBackfillMode = earliestId > 1n && totalCount < Number(latestId - earliestId + 1n);
-      const limitNum = isBackfillMode ? 25 : 50; // Increased limits since we're text-only now
+      // TURBO MODE: Increased batch size for paid plan performance
+      const limitNum = isBackfillMode ? 50 : 100; // Doubled from 25/50 to 50/100
       
       try {
         // Phase 1: Try fetching updates from Top (Newest messages)
@@ -407,17 +408,22 @@ export class SyncService {
 
       console.log(`Debug: Downloading media for message ${message.id}, type: ${message.media.className}`);
 
-      // PAID PLAN: Increased size limit for better media support
-      const MAX_SIZE = 50 * 1024 * 1024; // 50MB (upgraded from 300KB)
+      // TURBO MODE: Photo-only processing with 20MB limit for high-res photos
+      if (!message.media.photo) {
+        console.log(`[Phase B] Skipping non-photo media: ${message.media.className}`);
+        return {
+          success: true,
+          skipped: true,
+          reason: `Non-photo media type: ${message.media.className}`,
+          mediaKey: null
+        };
+      }
+
+      const MAX_SIZE = 20 * 1024 * 1024; // 20MB for high-res photos
       let fileSize = 0;
       
-      // Allow all media types (Documents, Videos, Photos, GIFs) under 50MB
-      if (message.media.document) {
-        // Safe cast from BigInt to Number for size comparison
-        fileSize = Number(message.media.document.size);
-        console.log(`[Phase B] Document size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
-      } else if (message.media.photo && message.media.photo.sizes) {
-        // Calculate max size from available photo variants
+      // Only process photos, calculate max size from available variants
+      if (message.media.photo && message.media.photo.sizes) {
         let maxSize = 0;
         for (const size of message.media.photo.sizes) {
           if (size.size) {
@@ -430,7 +436,7 @@ export class SyncService {
       }
       
       if (fileSize > MAX_SIZE) {
-        console.log(`[Phase B] Skipping media ${message.id}: Size ${(fileSize / 1024 / 1024).toFixed(2)}MB > 50MB limit.`);
+        console.log(`[Phase B] Skipping photo ${message.id}: Size ${(fileSize / 1024 / 1024).toFixed(2)}MB > 20MB limit.`);
         
         // Update DB to mark as skipped due to size
         await this.env.DB.prepare(`
@@ -440,17 +446,17 @@ export class SyncService {
         return {
           success: true,
           skipped: true,
-          reason: `File size ${(fileSize / 1024 / 1024).toFixed(2)}MB exceeds 50MB limit`,
+          reason: `Photo size ${(fileSize / 1024 / 1024).toFixed(2)}MB exceeds 20MB limit`,
           mediaKey: null
         };
       }
       
-      console.log(`[Phase B] Media size check passed (${fileSize} bytes <= 50MB), proceeding with download`);
+      console.log(`[Phase B] Photo size check passed (${fileSize} bytes <= 20MB), proceeding with download`);
 
-      // PAID PLAN: Increased timeout for larger downloads
+      // TURBO MODE: Fast photo download without artificial delays
       const downloadPromise = client.downloadMedia(message, { workers: 1 });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Download timed out > 60s')), 60000)
+        setTimeout(() => reject(new Error('Download timed out > 30s')), 30000)
       );
 
       let buffer;

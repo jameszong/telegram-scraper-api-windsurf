@@ -33,13 +33,13 @@ export class ChannelsService {
 
   async getChannels() {
     try {
-      console.log('[Channels] Fetching channels with PAID PLAN limits (200 dialogs)');
+      console.log('[Channels] Fetching channels with TURBO MODE (40 dialogs for stability)');
       const client = await this.getClient();
       await client.connect();
       
-      // PAID PLAN: Increased dialog fetch limit for better channel coverage
-      const dialogs = await client.getDialogs({ limit: 200 });
-      console.log(`[Channels] Fetched ${dialogs.length} dialogs (increased from 50)`);
+      // TURBO MODE: Optimized dialog fetch for stability and speed
+      const dialogs = await client.getDialogs({ limit: 40 });
+      console.log(`[Channels] Fetched ${dialogs.length} dialogs (optimized for stability)`);
       
       // Filter only channels and groups
       const channels = dialogs
