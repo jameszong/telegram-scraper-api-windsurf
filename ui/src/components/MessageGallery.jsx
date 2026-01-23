@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMessageStore } from '../store/messageStore';
 import { useChannelStore } from '../store/channelStore';
+import { VIEWER_URL } from '../utils/api';
 
 const MessageGallery = () => {
   const { 
@@ -76,6 +77,22 @@ const MessageGallery = () => {
 
     // 2. Show status based on media_status
     switch (msg.media_status) {
+      case 'completed':
+        if (msg.r2_key) {
+          return (
+            <button
+              onClick={() => setSelectedImage(`${VIEWER_URL}/media/${msg.r2_key}`)}
+              className="px-3 py-1 text-sm text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
+            >
+              📷 View Image
+            </button>
+          );
+        }
+        return (
+          <span className="text-green-500 dark:text-green-400 text-sm">
+            ✅ Completed
+          </span>
+        );
       case 'pending':
         return (
           <span 

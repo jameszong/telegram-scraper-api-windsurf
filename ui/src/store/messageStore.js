@@ -7,6 +7,7 @@ export const useMessageStore = create((set, get) => ({
   messages: [],
   isLoading: false,
   isSyncing: false,
+  isProcessing: false, // Add processing state for polling
   syncProgress: 0,  // Add sync progress tracking
   syncStatus: '',   // Add sync status message
   error: null,
@@ -17,6 +18,7 @@ export const useMessageStore = create((set, get) => ({
   // Actions
   setLoading: (loading) => set({ isLoading: loading }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
+  setProcessing: (processing) => set({ isProcessing: processing }),
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
   
@@ -191,7 +193,10 @@ export const useMessageStore = create((set, get) => ({
   },
 
   phaseBMediaProcessing: async () => {
-    set({ syncStatus: 'Phase B: Processing media queue...' });
+    set({ 
+      syncStatus: 'Phase B: Processing media queue...',
+      isProcessing: true
+    });
     
     let processedCount = 0;
     const maxMediaBatches = 50; // Process up to 50 media files
@@ -280,5 +285,28 @@ export const useMessageStore = create((set, get) => ({
     }
     
     console.log(`Debug: Phase B completed - Total media processed: ${processedCount}`);
+    set({ isProcessing: false });
+  },
+
+  // Auto-polling for real-time updates
+  startPolling: () => {
+    const { isProcessing } = get();
+    if (isProcessing) return; // Already polling
+
+    set({ isProcessing: true });
+    
+    const pollInterval = setInterval(async () => {
+      const { isProcessing: currentlyProcessing } = get();
+      if (!currentlyProcessing) {
+        clearInterval(pollInterval);
+        return;
+      }
+
+      // Fetch latest messages to update media_status
+      const { fetchMessages } = get();
+      await fetchMessages(50, true); // Reset and fetch latest
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
   },
 }));
