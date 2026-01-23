@@ -90,10 +90,11 @@ export const useMessageStore = create((set, get) => ({
     
     try {
       // Phase A: Fast Text Sync
-      await this.phaseATextSync();
+      const { phaseATextSync, phaseBMediaProcessing } = get();
+      await phaseATextSync();
       
       // Phase B: Media Processing Queue
-      await this.phaseBMediaProcessing();
+      await phaseBMediaProcessing();
       
       // Final refresh to show completed media
       const { fetchMessages } = get();
