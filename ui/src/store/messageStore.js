@@ -210,7 +210,9 @@ export const useMessageStore = create((set, get) => ({
       
       const data = await response.json();
       
-      if (data.success) {
+      console.log(`Debug: Phase B - Processor response:`, data);
+      
+      if (data && data.success) {
         if (data.remaining === 0) {
           console.log(`Debug: Phase B - No more media to process`);
           set({ 
@@ -226,12 +228,8 @@ export const useMessageStore = create((set, get) => ({
           // Update local messages state to include new media_url for instant display
           const { messages } = get();
           const updatedMessages = messages.map(msg => {
-            if (msg.telegram_message_id === data.messageId && data.result?.mediaKey) {
-              const r2PublicUrl = "https://pub-5e1e5a4b6b8b4a8b8b8b8b8b8b8b8b8b.r2.dev"; // This should come from env
-              return {
-                ...msg,
-                media_url: `${r2PublicUrl}/${data.result.mediaKey}`
-              };
+            if (msg.telegram_message_id === data.messageId && data.mediaKey) {
+              return { ...msg, media_status: 'completed', media_url: data.mediaKey };
             }
             return msg;
           });
@@ -248,7 +246,7 @@ export const useMessageStore = create((set, get) => ({
         console.log(`Debug: Phase B - Waiting ${cooldown}ms for CPU recovery...`);
         await new Promise(resolve => setTimeout(resolve, cooldown));
       } else {
-        console.error(`Debug: Phase B - Media processing failed: ${data.error}`);
+        console.error(`Debug: Phase B - Media processing failed:`, data?.error || 'Unknown error');
         // Don't throw error for media processing failures, just continue
         console.log(`Debug: Phase B - Continuing despite media processing error...`);
       }
