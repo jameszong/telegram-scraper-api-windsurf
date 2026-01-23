@@ -66,10 +66,14 @@ export const MessageGallery = () => {
           console.log(`Frontend: Created new group ${groupId}`);
         }
         
-        // Add media URL if exists
+        // Add media URL if exists, or handle pending status
         if (message.media_url) {
           groups[groupId].media_urls.push(message.media_url);
           console.log(`Frontend: Added media URL to group ${groupId}: ${message.media_url}`);
+        } else if (message.media_status === 'pending') {
+          // Add placeholder for pending media
+          groups[groupId].media_urls.push('pending');
+          console.log(`Frontend: Added pending media placeholder to group ${groupId}`);
         }
         
         // Set text (caption) - usually from the first message with text
@@ -82,11 +86,11 @@ export const MessageGallery = () => {
         result.push({
           id: message.id,
           text: message.text,
-          media_urls: message.media_url ? [message.media_url] : [],
+          media_urls: message.media_url ? [message.media_url] : (message.media_status === 'pending' ? ['pending'] : []),
           date: message.date,
           telegram_message_id: message.telegram_message_id
         });
-        console.log(`Frontend: Added standalone message ${message.id} with ${message.media_url ? 1 : 0} media items`);
+        console.log(`Frontend: Added standalone message ${message.id} with ${message.media_url ? 1 : (message.media_status === 'pending' ? 1 : 0)} media items`);
       }
     }
     
@@ -160,22 +164,36 @@ export const MessageGallery = () => {
                     group.media_urls.length === 2 ? 'grid-cols-2' : 
                     'grid-cols-3'
                   }`}>
-                    {group.media_urls.map((url, index) => (
-                      <img 
-                        key={`${url}-${index}`}
-                        src={url} 
-                        alt="Attachment" 
-                        className="object-cover w-full h-32 rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
-                        loading="lazy"
-                        onError={(e) => {
-                          console.error('Frontend: Image load failed:', e.target.src);
-                          e.target.style.display = 'none'; // Hide broken images
-                        }}
-                        onLoad={(e) => {
-                          console.log('Frontend: Image loaded successfully:', e.target.src);
-                        }}
-                      />
-                    ))}
+                    {group.media_urls.map((urlOrStatus, index) => {
+                      if (urlOrStatus === 'pending') {
+                        // Show placeholder for pending media
+                        return (
+                          <div 
+                            key={`pending-${index}`}
+                            className="object-cover w-full h-32 rounded-sm bg-gray-600 flex items-center justify-center text-gray-300 text-xs"
+                          >
+                            Image Queued
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <img 
+                          key={`${urlOrStatus}-${index}`}
+                          src={urlOrStatus} 
+                          alt="Attachment" 
+                          className="object-cover w-full h-32 rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
+                          loading="lazy"
+                          onError={(e) => {
+                            console.error('Frontend: Image load failed:', e.target.src);
+                            e.target.style.display = 'none'; // Hide broken images
+                          }}
+                          onLoad={(e) => {
+                            console.log('Frontend: Image loaded successfully:', e.target.src);
+                          }}
+                        />
+                      );
+                    })}
                   </div>
                 )}
 

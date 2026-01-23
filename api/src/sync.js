@@ -403,6 +403,20 @@ export class SyncService {
       );
 
       let buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      
+      // CRITICAL: Verify buffer before uploading
+      if (!buffer || buffer.length === 0) {
+        console.error(`Debug: Downloaded empty buffer for message ${message.id}`);
+        await this.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed' WHERE id = ?
+        `).bind(pendingMessage.id).run();
+        return {
+          success: false,
+          error: 'Downloaded empty buffer',
+          mediaKey: null
+        };
+      }
+      
       console.log(`Debug: Successfully downloaded media (${buffer.length} bytes)`);
 
       // Generate R2 key
@@ -413,14 +427,25 @@ export class SyncService {
 
       console.log(`Debug: Uploading to R2: ${key}`);
 
-      // Upload to R2
-      await this.env.BUCKET.put(key, buffer, {
-        httpMetadata: {
-          contentType: this.getContentType(message.media.className)
-        }
-      });
-
-      console.log(`Debug: Successfully uploaded to R2: ${key}`);
+      // Upload to R2 with error handling
+      try {
+        await this.env.BUCKET.put(key, buffer, {
+          httpMetadata: {
+            contentType: this.getContentType(message.media.className)
+          }
+        });
+        console.log(`Debug: Successfully uploaded to R2: ${key}`);
+      } catch (uploadError) {
+        console.error(`Debug: R2 upload failed for message ${message.id}:`, uploadError);
+        await this.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed' WHERE id = ?
+        `).bind(pendingMessage.id).run();
+        return {
+          success: false,
+          error: 'R2 upload failed: ' + uploadError.message,
+          mediaKey: null
+        };
+      }
 
       // Update database with media key and completed status
       await this.env.DB.prepare(`
