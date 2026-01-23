@@ -246,6 +246,16 @@ app.get('/messages', async (c) => {
 // Sync routes
 app.post('/sync', async (c) => {
   const syncService = c.get('syncService');
+  const authService = c.get('authService');
+  
+  // CRITICAL: Sync credentials to D1 before any sync operation
+  console.log('[Sync] Syncing credentials to D1...');
+  const configSync = await authService.syncEnvToDb();
+  if (!configSync.success) {
+    console.error('[Sync] Failed to sync credentials to D1:', configSync.error);
+    return c.json({ success: false, error: 'Failed to sync credentials to D1' }, 500);
+  }
+  
   const result = await syncService.syncMessages();
   
   // Calculate dynamic cooldown to prevent Cloudflare 503 errors

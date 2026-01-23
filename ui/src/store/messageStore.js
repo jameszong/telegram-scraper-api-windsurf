@@ -208,6 +208,17 @@ export const useMessageStore = create((set, get) => ({
         method: 'POST'
       });
       
+      // CRITICAL: Check HTTP status for credential errors before parsing JSON
+      if (response.status === 401) {
+        console.error('[Phase B] HTTP 401 Unauthorized - Credential error detected');
+        set({ 
+          isProcessing: false,
+          syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
+          error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
+        });
+        return; // Stop the loop immediately
+      }
+      
       const data = await response.json();
       
       console.log(`Debug: Phase B - Processor response:`, data);
@@ -247,7 +258,23 @@ export const useMessageStore = create((set, get) => ({
         await new Promise(resolve => setTimeout(resolve, cooldown));
       } else {
         console.error(`Debug: Phase B - Media processing failed:`, data?.error || 'Unknown error');
-        // Don't throw error for media processing failures, just continue
+        
+        // CRITICAL: Check for credential errors and abort immediately
+        if (data?.error && (
+          data.error.includes('credentials not found') ||
+          data.error.includes('Telegram credentials') ||
+          data.error.includes('D1 app_config')
+        )) {
+          console.error('[Phase B] Credential error detected - ABORTING media processing');
+          set({ 
+            isProcessing: false,
+            syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
+            error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
+          });
+          return; // Stop the loop immediately
+        }
+        
+        // Don't throw error for other media processing failures, just continue
         console.log(`Debug: Phase B - Continuing despite media processing error...`);
       }
     }

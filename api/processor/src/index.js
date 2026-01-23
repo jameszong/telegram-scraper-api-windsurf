@@ -97,6 +97,21 @@ app.post('/process-media', async (c) => {
   const syncService = c.get('syncService');
   
   try {
+    // CRITICAL: Validate credentials exist before processing
+    console.log('[Processor] Validating credentials...');
+    try {
+      await syncService.authService.getCredentials();
+    } catch (credentialError) {
+      console.error('[Processor] Credential validation failed:', credentialError.message);
+      if (credentialError.message.includes('credentials not found')) {
+        return c.json({ 
+          success: false, 
+          error: 'Telegram credentials not found in D1 app_config table. Please ensure Scanner has synced credentials first.' 
+        }, 401);
+      }
+      throw credentialError;
+    }
+    
     // Step 1: Fetch pending task with retry logic
     const pendingMessage = await c.env.DB.prepare(`
       SELECT * FROM messages 
