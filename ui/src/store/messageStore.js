@@ -49,7 +49,18 @@ export const useMessageStore = create((set, get) => ({
       const currentOffset = reset ? 0 : offset;
       // CRITICAL: Use VIEWER_URL for read-only message fetching
       const response = await authenticatedFetch(`${VIEWER_URL}/messages?channelId=${selectedChannel.id}&limit=${limit}&offset=${currentOffset}`);
+      
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         const fetchedMessages = data.messages || [];
@@ -302,9 +313,14 @@ export const useMessageStore = create((set, get) => ({
         return;
       }
 
-      // Fetch latest messages to update media_status
-      const { fetchMessages } = get();
-      await fetchMessages(50, true); // Reset and fetch latest
+      try {
+        // Fetch latest messages to update media_status
+        const { fetchMessages } = get();
+        await fetchMessages(50, true); // Reset and fetch latest
+      } catch (error) {
+        console.error('[MessageStore] Polling error:', error);
+        // Don't crash the component, just log and continue
+      }
     }, 5000); // Poll every 5 seconds
 
     return () => clearInterval(pollInterval);

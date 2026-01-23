@@ -2,18 +2,21 @@
 import React, { useState, useEffect } from 'react';
 import { useMessageStore } from '../store/messageStore';
 import { useChannelStore } from '../store/channelStore';
+import { useArchiver } from '../hooks/useArchiver';
+import ImageGalleryModal from './ImageGalleryModal';
 import { VIEWER_URL } from '../utils/api';
 
 const MessageGallery = () => {
   const { 
-    messages, 
     isLoading, 
     hasMore, 
     fetchMessages 
   } = useMessageStore();
   const { selectedChannel, channels } = useChannelStore();
+  const { messages, isProcessing, isSyncing, syncStatus, startSync } = useArchiver();
   
   const [selectedImage, setSelectedImage] = useState(null);
+  const [galleryModal, setGalleryModal] = useState({ isOpen: false, images: [], initialIndex: 0 });
 
   // Helper to get channel name by ID
   const getChannelName = (id) => {
@@ -61,9 +64,31 @@ const MessageGallery = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
 
+  // Handle opening gallery modal for groups
+  const openGalleryModal = (message, index = 0) => {
+    if (message.isGroup && message.media_group) {
+      // Filter media_group to only include completed items with r2_key
+      const completedMedia = message.media_group.filter(m => m.media_status === 'completed' && m.r2_key);
+      if (completedMedia.length > 0) {
+        setGalleryModal({
+          isOpen: true,
+          images: completedMedia,
+          initialIndex: index
+        });
+      }
+    } else if (message.r2_key) {
+      // Single image
+      setGalleryModal({
+        isOpen: true,
+        images: [message],
+        initialIndex: 0
+      });
+    }
+  };
+
   // Render media column content
   const renderMediaColumn = (msg) => {
-    // 1. Success with URL -> Show button
+    // 1. Success with URL -> Show button (legacy support)
     if (msg.media_url) {
       return (
         <button
@@ -75,13 +100,37 @@ const MessageGallery = () => {
       );
     }
 
-    // 2. Show status based on media_status
+    // 2. Handle grouped messages
+    if (msg.isGroup) {
+      const completedCount = msg.media_group.filter(m => m.media_status === 'completed' && m.r2_key).length;
+      const totalCount = msg.media_group.length;
+      
+      if (completedCount > 0) {
+        return (
+          <button
+            onClick={() => openGalleryModal(msg, 0)}
+            className="px-3 py-1 text-sm text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
+          >
+            🖼️ {completedCount}/{totalCount} Images
+          </button>
+        );
+      } else {
+        // Show processing status for the group
+        const firstMedia = msg.media_group.find(m => m.media_status === 'pending' || m.media_status === 'processing');
+        if (firstMedia) {
+          return renderMediaStatus(firstMedia.media_status);
+        }
+        return <span className="text-gray-300 dark:text-gray-600">-</span>;
+      }
+    }
+
+    // 3. Show status based on media_status (individual messages)
     switch (msg.media_status) {
       case 'completed':
         if (msg.r2_key) {
           return (
             <button
-              onClick={() => setSelectedImage(`${VIEWER_URL}/media/${msg.r2_key}`)}
+              onClick={() => openGalleryModal(msg, 0)}
               className="px-3 py-1 text-sm text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
             >
               📷 View Image
@@ -190,7 +239,20 @@ const MessageGallery = () => {
                   {formatDate(msg.date)}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xl break-words">
-                  {msg.text || <span className="text-gray-400 dark:text-gray-500 italic">(No text)</span>}
+                  {msg.isGroup ? (
+                    <div>
+                      <span className="text-gray-400 dark:text-gray-500 italic">
+                        🖼️ Album ({msg.groupSize} images)
+                      </span>
+                      {msg.text && (
+                        <div className="mt-1 text-gray-600 dark:text-gray-400 text-sm">
+                          {msg.text}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    msg.text || <span className="text-gray-400 dark:text-gray-500 italic">(No text)</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   {renderMediaColumn(msg)}
@@ -223,6 +285,14 @@ const MessageGallery = () => {
           </div>
         </div>
       )}
+      
+      {/* Gallery Modal for grouped images */}
+      <ImageGalleryModal
+        isOpen={galleryModal.isOpen}
+        onClose={() => setGalleryModal({ isOpen: false, images: [], initialIndex: 0 })}
+        images={galleryModal.images}
+        initialIndex={galleryModal.initialIndex}
+      />
     </div>
   );
 };
