@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useMessageStore } from '../store/messageStore';
+import { useChannelStore } from '../store/channelStore';
 
 // Group messages by grouped_id for album display
 const groupMessages = (messages) => {
@@ -49,13 +50,25 @@ export const useArchiver = () => {
     error,
     startPolling,
     phaseASync,
-    phaseBMediaProcessing
+    phaseBMediaProcessing,
+    fetchMessages
   } = useMessageStore();
+  const { selectedChannel } = useChannelStore();
 
   // Memoized grouped messages
   const groupedMessages = useMemo(() => {
     return groupMessages(messages);
   }, [messages]);
+
+  // Load history when channel changes
+  useEffect(() => {
+    if (selectedChannel && selectedChannel.id) {
+      console.log(`[useArchiver] Loading history for channel ${selectedChannel.id}`);
+      fetchMessages(50, true, selectedChannel.id).catch(error => {
+        console.error('[useArchiver] Failed to load history:', error);
+      });
+    }
+  }, [selectedChannel?.id, fetchMessages]);
 
   // Auto-polling effect
   useEffect(() => {

@@ -25,22 +25,6 @@ const MessageGallery = () => {
     return ch ? ch.title : id;
   };
 
-  // Load history on mount when channel changes
-  useEffect(() => {
-    if (!selectedChannel || !selectedChannel.id) return;
-    
-    const loadHistory = async () => {
-      console.log(`Frontend: Loading history for channel ${selectedChannel.id}`);
-      try {
-        await fetchMessages(50, true, selectedChannel.id);
-      } catch (error) {
-        console.error('Frontend: History fetch failed:', error);
-      }
-    };
-    
-    loadHistory();
-  }, [selectedChannel?.id, fetchMessages]);
-
   // Format date timestamp
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -63,6 +47,51 @@ const MessageGallery = () => {
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
+
+  // Helper to render media status
+  const renderMediaStatus = (status) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <span 
+            className="text-yellow-600 dark:text-yellow-400 text-sm" 
+            title="Phase B is processing... Please wait"
+          >
+            ⏳ Queued
+          </span>
+        );
+      case 'processing':
+        return (
+          <span 
+            className="text-blue-500 dark:text-blue-400 text-sm" 
+            title="Currently downloading..."
+          >
+            🔄 Downloading...
+          </span>
+        );
+      case 'skipped_large':
+        return (
+          <span 
+            className="text-gray-500 dark:text-gray-400 text-sm" 
+            title=">300KB - File too large for processing"
+          >
+            ⚠️ Too Large
+          </span>
+        );
+      case 'failed':
+        return (
+          <span 
+            className="text-red-500 dark:text-red-400 text-sm" 
+            title="Download failed - will retry"
+          >
+            ❌ Failed
+          </span>
+        );
+      case 'none':
+      default:
+        return <span className="text-gray-300 dark:text-gray-600">-</span>;
+    }
+  };
 
   // Handle opening gallery modal for groups
   const openGalleryModal = (message, index = 0) => {
@@ -143,44 +172,16 @@ const MessageGallery = () => {
           </span>
         );
       case 'pending':
-        return (
-          <span 
-            className="text-yellow-600 dark:text-yellow-400 text-sm" 
-            title="Phase B is processing... Please wait"
-          >
-            ⏳ Queued
-          </span>
-        );
+        return renderMediaStatus('pending');
       case 'processing':
-        return (
-          <span 
-            className="text-blue-500 dark:text-blue-400 text-sm" 
-            title="Currently downloading..."
-          >
-            🔄 Downloading...
-          </span>
-        );
+        return renderMediaStatus('processing');
       case 'skipped_large':
-        return (
-          <span 
-            className="text-gray-500 dark:text-gray-400 text-sm" 
-            title=">300KB - File too large for processing"
-          >
-            ⚠️ Too Large
-          </span>
-        );
+        return renderMediaStatus('skipped_large');
       case 'failed':
-        return (
-          <span 
-            className="text-red-500 dark:text-red-400 text-sm" 
-            title="Download failed - will retry"
-          >
-            ❌ Failed
-          </span>
-        );
+        return renderMediaStatus('failed');
       case 'none':
       default:
-        return <span className="text-gray-300 dark:text-gray-600">-</span>;
+        return renderMediaStatus('none');
     }
   };
 
