@@ -33,11 +33,13 @@ export class ChannelsService {
 
   async getChannels() {
     try {
+      console.log('[Channels] Fetching channels with limit to prevent CPU exhaustion');
       const client = await this.getClient();
       await client.connect();
       
-      // Get all dialogs (chats, channels, groups)
-      const dialogs = await client.getDialogs({});
+      // Prevent CPU exhaustion by limiting dialog fetch
+      const dialogs = await client.getDialogs({ limit: 50 });
+      console.log(`[Channels] Fetched ${dialogs.length} dialogs`);
       
       // Filter only channels and groups
       const channels = dialogs
@@ -50,6 +52,7 @@ export class ChannelsService {
           participantsCount: dialog.participantsCount || 0
         }));
 
+      console.log(`[Channels] Found ${channels.length} channels/groups`);
       await client.disconnect();
 
       return {
@@ -57,7 +60,8 @@ export class ChannelsService {
         channels
       };
     } catch (error) {
-      console.error('Error getting channels:', error);
+      console.error('[Channels] Error getting channels:', error.message);
+      console.error('[Channels] Stack:', error.stack);
       return {
         success: false,
         error: error.message

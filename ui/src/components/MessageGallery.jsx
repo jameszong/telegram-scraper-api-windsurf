@@ -10,9 +10,15 @@ const MessageGallery = () => {
     hasMore, 
     fetchMessages 
   } = useMessageStore();
-  const { selectedChannel } = useChannelStore();
+  const { selectedChannel, channels } = useChannelStore();
   
   const [selectedImage, setSelectedImage] = useState(null);
+
+  // Helper to get channel name by ID
+  const getChannelName = (id) => {
+    const ch = channels.find(c => String(c.id) === String(id));
+    return ch ? ch.title : id;
+  };
 
   // Load history on mount when channel changes
   useEffect(() => {
@@ -70,16 +76,44 @@ const MessageGallery = () => {
     // 2. Show status based on media_status
     switch (msg.media_status) {
       case 'pending':
-        return <span className="text-yellow-600 text-sm">⏳ Queued</span>;
+        return (
+          <span 
+            className="text-yellow-600 dark:text-yellow-400 text-sm" 
+            title="Phase B is processing... Please wait"
+          >
+            ⏳ Queued
+          </span>
+        );
       case 'processing':
-        return <span className="text-blue-500 text-sm">🔄 Downloading...</span>;
+        return (
+          <span 
+            className="text-blue-500 dark:text-blue-400 text-sm" 
+            title="Currently downloading..."
+          >
+            🔄 Downloading...
+          </span>
+        );
       case 'skipped_large':
-        return <span className="text-gray-500 text-sm" title=">300KB">⚠️ Too Large</span>;
+        return (
+          <span 
+            className="text-gray-500 dark:text-gray-400 text-sm" 
+            title=">300KB - File too large for processing"
+          >
+            ⚠️ Too Large
+          </span>
+        );
       case 'failed':
-        return <span className="text-red-500 text-sm">❌ Failed</span>;
+        return (
+          <span 
+            className="text-red-500 dark:text-red-400 text-sm" 
+            title="Download failed - will retry"
+          >
+            ❌ Failed
+          </span>
+        );
       case 'none':
       default:
-        return <span className="text-gray-300">-</span>;
+        return <span className="text-gray-300 dark:text-gray-600">-</span>;
     }
   };
 
@@ -91,48 +125,48 @@ const MessageGallery = () => {
   });
 
   return (
-    <div className="overflow-x-auto bg-white shadow rounded-lg">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+    <div className="overflow-x-auto bg-white dark:bg-zinc-900 shadow rounded-lg">
+      <table className="min-w-full divide-y divide-gray-200 dark:divide-zinc-800">
+        <thead className="bg-gray-50 dark:bg-zinc-800">
           <tr>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">
               ID
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">
               Time
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Content
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
               Media
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white dark:bg-zinc-900 divide-y divide-gray-200 dark:divide-zinc-800">
           {isLoading && validMessages.length === 0 ? (
             <tr>
-              <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+              <td colSpan="4" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                 Loading...
               </td>
             </tr>
           ) : validMessages.length === 0 ? (
             <tr>
-              <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+              <td colSpan="4" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                 No messages (Select channel or click Sync)
               </td>
             </tr>
           ) : (
             validMessages.map((msg) => (
-              <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <tr key={msg.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {msg.telegram_message_id}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {formatDate(msg.date)}
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-900 max-w-xl break-words">
-                  {msg.text || <span className="text-gray-400 italic">(No text)</span>}
+                <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xl break-words">
+                  {msg.text || <span className="text-gray-400 dark:text-gray-500 italic">(No text)</span>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   {renderMediaColumn(msg)}
