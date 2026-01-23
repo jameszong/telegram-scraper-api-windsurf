@@ -93,7 +93,7 @@ export class SyncService {
       let messages = [];
       // Dynamic batch size: smaller for backfill to be safer
       let isBackfillMode = earliestId > 1n && totalCount < Number(latestId - earliestId + 1n);
-      const limitNum = isBackfillMode ? 15 : 30; // Smaller limit for backfill mode
+      const limitNum = isBackfillMode ? 25 : 50; // Increased limits since we're text-only now
       
       try {
         // Phase 1: Try fetching updates from Top (Newest messages)
@@ -178,26 +178,19 @@ export class SyncService {
             text: message.text || '',
             date: new Date(Number(message.date) * 1000).toISOString(),
             grouped_id: message.groupedId ? message.groupedId.toString() : null, // Add grouped_id for album support
-            media: null
+            media_status: 'none', // Default status
+            media_type: null // Default type
           };
 
-          // Handle media if present - STRICT PHOTO-ONLY FILTER
+          // Handle media status tracking (NO DOWNLOADING in sync route)
           if (message.media && message.media.className !== 'MessageMediaWebPage') {
-            // CRITICAL: Only process photos, skip all documents to prevent CPU timeout
-            if (message.media.className === 'MessageMediaPhoto') {
-              console.log(`Debug: Processing photo media for message ${message.id}...`);
-              const mediaResult = await this.handleMedia(message, client, targetChannelId);
-              if (mediaResult.success) {
-                messageData.media = mediaResult.mediaData;
-                mediaCount++;
-                console.log(`Debug: Successfully processed photo for message ${message.id}`);
-              } else {
-                console.log(`Debug: Failed to process photo for message ${message.id}: ${mediaResult.error}`);
-              }
-            } else {
-              console.log(`Debug: Skipping non-photo media (Type: ${message.media.className}) for msg ${message.id} - CPU limit protection`);
-              // Skip download entirely, just save text metadata
-            }
+            console.log(`Debug: Found media type ${message.media.className} for message ${message.id}, setting status to pending`);
+            messageData.media_status = 'pending';
+            messageData.media_type = message.media.className;
+            mediaCount++; // Count media for async processing
+          } else {
+            messageData.media_status = 'none';
+            messageData.media_type = null;
           }
 
           const result = await this.saveMessage(messageData);
@@ -213,7 +206,8 @@ export class SyncService {
             text: '[Service Message]',
             date: new Date(Number(message.date) * 1000).toISOString(),
             grouped_id: null,
-            media: null
+            media_status: 'none', // Service messages have no media
+            media_type: null
           };
           
           const result = await this.saveMessage(placeholderData);
@@ -244,99 +238,31 @@ export class SyncService {
     }
   }
 
-  async handleMedia(message, client, targetChannelId) {
-    try {
-      let mediaData = null;
-      let buffer = null;
-
-      console.log(`Debug: Media type: ${message.media.className}`);
-
-      // CRITICAL: Only process photos to prevent CPU timeout
-      if (!message.photo) {
-        console.log(`Debug: Skipping non-photo media for message ${message.id} - CPU limit protection`);
-        return { success: false, error: 'Only photos are supported' };
-      }
-
-      console.log(`Debug: Downloading photo for message ${message.id}...`);
-      const photo = message.photo;
-      const size = photo.sizes[photo.sizes.length - 1]; // Get largest size
-      
-      // CRITICAL: Add 5-second timeout to prevent Worker CPU limit exceeded
-      const downloadPromise = client.downloadMedia(message, { workers: 1 });
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Download timeout - CPU limit protection')), 5000)
-      );
-
-      try {
-        buffer = await Promise.race([downloadPromise, timeoutPromise]);
-        console.log(`Debug: Successfully downloaded photo (${buffer.length} bytes) for message ${message.id}`);
-      } catch (downloadError) {
-        console.error(`Error downloading photo for message ${message.id}:`, downloadError.message);
-        return { success: false, error: downloadError.message };
-      }
-
-      mediaData = {
-        type: 'photo',
-        extension: 'jpg',
-        size: buffer.length,
-        mime_type: 'image/jpeg',
-        width: size.w,
-        height: size.h
-      };
-
-      if (buffer && mediaData) {
-        // Generate unique key for R2
-        // message.chatId and message.id are already BigInt from GramJS
-        const chatIdStr = message.chatId ? message.chatId.toString() : String(targetChannelId);
-        const messageIdStr = message.id.toString();
-        const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${mediaData.extension}`;
-        
-        console.log(`Debug: Uploading to R2: ${key} (${buffer.length} bytes)`);
-        
-        // Upload to R2
-        await this.env.BUCKET.put(key, buffer, {
-          httpMetadata: {
-            contentType: mediaData.mime_type
-          }
-        });
-
-        // CRITICAL: Free memory immediately after upload
-        buffer = null;
-
-        mediaData.r2_key = key;
-        console.log(`Debug: Successfully uploaded to R2: ${key}`);
-        
-        return { success: true, mediaData };
-      }
-
-      return { success: false, error: 'No buffer or media data' };
-    } catch (error) {
-      console.error(`Error processing media for message ${message.id}:`, error);
-      return { success: false, error: error.message };
-    }
-  }
-
   async saveMessage(messageData) {
     try {
       // UPSERT message into D1 (update existing records with new media info)
       const result = await this.env.DB.prepare(`
-        INSERT INTO messages (telegram_message_id, chat_id, text, date, grouped_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO messages (telegram_message_id, chat_id, text, date, grouped_id, media_status, media_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(telegram_message_id, chat_id) DO UPDATE SET
           text = excluded.text,
           grouped_id = excluded.grouped_id,
-          date = excluded.date
+          date = excluded.date,
+          media_status = excluded.media_status,
+          media_type = excluded.media_type
       `).bind(
         messageData.telegram_message_id,
         messageData.chat_id,
         messageData.text,
         messageData.date,
-        messageData.grouped_id
+        messageData.grouped_id,
+        messageData.media_status,
+        messageData.media_type
       ).run(); // CRITICAL: Ensure database write is fully awaited
 
-      // Debug: Log database write
-      if (messageData.media) {
-        console.log(`Debug: Updating DB for msg ${messageData.telegram_message_id} with media key: ${messageData.media.r2_key}`);
+      // Debug: Log database write with media status
+      if (messageData.media_status === 'pending') {
+        console.log(`Debug: Saved message ${messageData.telegram_message_id} with pending media status, type: ${messageData.media_type}`);
       }
 
       // For UPSERT, we need to get the message ID regardless of whether it was inserted or updated
@@ -354,41 +280,6 @@ export class SyncService {
           messageData.chat_id
         ).first();
         messageId = existingMessage.id;
-      }
-
-      if (messageId && messageData.media) {
-        // Check if media already exists for this message
-        const existingMedia = await this.env.DB.prepare(`
-          SELECT id FROM media WHERE message_id = ?
-        `).bind(messageId).first();
-
-        if (!existingMedia) {
-          // Save media metadata to D1
-          await this.env.DB.prepare(`
-            INSERT INTO media (message_id, r2_key, file_type, file_size, mime_type)
-            VALUES (?, ?, ?, ?, ?)
-          `).bind(
-            messageId,
-            messageData.media.r2_key,
-            messageData.media.type,
-            messageData.media.size,
-            messageData.media.mime_type
-          ).run();
-          console.log(`Debug: Inserted new media record for message ${messageId}`);
-        } else {
-          // Update existing media record
-          await this.env.DB.prepare(`
-            UPDATE media SET r2_key = ?, file_type = ?, file_size = ?, mime_type = ?
-            WHERE message_id = ?
-          `).bind(
-            messageData.media.r2_key,
-            messageData.media.type,
-            messageData.media.size,
-            messageData.media.mime_type,
-            messageId
-          ).run();
-          console.log(`Debug: Updated existing media record for message ${messageId}`);
-        }
       }
 
       return { success: true, messageId: result.meta.last_row_id };
