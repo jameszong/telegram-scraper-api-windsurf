@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { API_BASE, authenticatedFetch } from '../utils/api';
+import { SCANNER_URL, PROCESSOR_URL, VIEWER_URL, authenticatedFetch } from '../utils/api';
 import { useChannelStore } from './channelStore';
 
 export const useMessageStore = create((set, get) => ({
@@ -45,8 +45,8 @@ export const useMessageStore = create((set, get) => ({
     
     try {
       const currentOffset = reset ? 0 : offset;
-      // CRITICAL: Pass channelId to prevent data leakage
-      const response = await authenticatedFetch(`${API_BASE}/messages?channelId=${selectedChannel.id}&limit=${limit}&offset=${currentOffset}`);
+      // CRITICAL: Use VIEWER_URL for read-only message fetching
+      const response = await authenticatedFetch(`${VIEWER_URL}/messages?channelId=${selectedChannel.id}&limit=${limit}&offset=${currentOffset}`);
       const data = await response.json();
       
       if (data.success) {
@@ -136,7 +136,7 @@ export const useMessageStore = create((set, get) => ({
       
       console.log(`Debug: Phase A - Syncing batch ${i + 1}/${maxBatches}`);
       
-      const response = await authenticatedFetch(`${API_BASE}/sync`, {
+      const response = await authenticatedFetch(`${SCANNER_URL}/sync`, {
         method: 'POST'
       });
       
@@ -204,7 +204,7 @@ export const useMessageStore = create((set, get) => ({
       
       console.log(`Debug: Phase B - Processing media batch ${i + 1}/${maxMediaBatches}`);
       
-      const response = await authenticatedFetch(`${API_BASE}/process-media`, {
+      const response = await authenticatedFetch(`${PROCESSOR_URL}/process-media`, {
         method: 'POST'
       });
       

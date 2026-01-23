@@ -13,6 +13,36 @@ export class TelegramAuthService {
     }
   }
 
+  // CRITICAL: Sync environment variables to D1 for sharing with other workers
+  async syncEnvToDb() {
+    try {
+      console.log('[Config Sync] Syncing environment variables to D1...');
+      
+      const configs = [
+        { key: 'TELEGRAM_SESSION', value: this.env.TELEGRAM_SESSION || '' },
+        { key: 'TELEGRAM_API_ID', value: this.env.TELEGRAM_API_ID?.toString() || '' },
+        { key: 'TELEGRAM_API_HASH', value: this.env.TELEGRAM_API_HASH || '' },
+        { key: 'R2_PUBLIC_URL', value: this.env.R2_PUBLIC_URL || '' }
+      ];
+
+      for (const config of configs) {
+        await this.env.DB.prepare(`
+          INSERT INTO app_config (key, value, updated_at) 
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET 
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+        `).bind(config.key, config.value).run();
+      }
+
+      console.log('[Config Sync] Successfully synced configuration to D1');
+      return { success: true };
+    } catch (error) {
+      console.error('[Config Sync] Failed to sync config:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   async getClient() {
     const sessionString = await this.getSession();
     const session = new StringSession(sessionString || '');

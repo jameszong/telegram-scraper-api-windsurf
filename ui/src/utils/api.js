@@ -1,5 +1,10 @@
-// Use environment variable if available, otherwise fallback (for local dev)
-const API_BASE = import.meta.env.VITE_API_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+// Microservice URLs - Support 3 distinct workers
+const SCANNER_URL = import.meta.env.VITE_SCANNER_URL || "https://telegram-archiver-api.iflove29.workers.dev";
+const PROCESSOR_URL = import.meta.env.VITE_PROCESSOR_URL || "https://telegram-processor.iflove29.workers.dev";
+const VIEWER_URL = import.meta.env.VITE_VIEWER_URL || "https://telegram-viewer.iflove29.workers.dev";
+
+// Legacy fallback for backward compatibility
+const API_BASE = SCANNER_URL;
 
 // Create a fetch function that adds the access key to all requests
 export const createAuthenticatedFetch = () => {
@@ -25,4 +30,6 @@ export const createAuthenticatedFetch = () => {
 };
 
 export const authenticatedFetch = createAuthenticatedFetch();
-export { API_BASE };
+
+// Export microservice URLs for stores to use
+export { API_BASE, SCANNER_URL, PROCESSOR_URL, VIEWER_URL };
