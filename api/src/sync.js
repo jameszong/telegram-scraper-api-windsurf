@@ -414,13 +414,22 @@ export class SyncService {
       if (message.media.document) {
         // Safe cast from BigInt to Number for size comparison
         fileSize = Number(message.media.document.size);
-        console.log(`Debug: Document size: ${fileSize} bytes`);
+        console.log(`[Phase B] Document size: ${fileSize} bytes`);
+      } else if (message.media.photo && message.media.photo.sizes) {
+        // Calculate max size from available photo variants
+        let maxSize = 0;
+        for (const size of message.media.photo.sizes) {
+          if (size.size) {
+            const sizeNum = Number(size.size);
+            if (sizeNum > maxSize) maxSize = sizeNum;
+          }
+        }
+        fileSize = maxSize;
+        console.log(`[Phase B] Photo max size: ${fileSize} bytes`);
       }
-      // Note: Photos (MessageMediaPhoto) don't have a single 'size' attribute and are usually safe
-      // Treat photos as fileSize = 0 (always download)
       
       if (fileSize > MAX_SIZE) {
-        console.log(`[Phase B] Skipping msg ${message.id}: Size ${fileSize} > 300KB limit.`);
+        console.log(`[Phase B] Skipping media ${message.id}: Size ${fileSize} > 300KB limit.`);
         
         // Update DB to mark as skipped due to size
         await this.env.DB.prepare(`
@@ -437,13 +446,29 @@ export class SyncService {
       
       console.log(`[Phase B] Media size check passed (${fileSize} bytes <= 300KB), proceeding with download`);
 
-      // Download media with timeout
+      // Download media with 15-second timeout
       const downloadPromise = client.downloadMedia(message, { workers: 1 });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Download timeout - CPU limit protection')), 10000)
+        setTimeout(() => reject(new Error('Download timed out > 15s')), 15000)
       );
 
-      let buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      let buffer;
+      try {
+        buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      } catch (error) {
+        console.error(`[Phase B] Error/Timeout for message ${message.id}:`, error.message);
+        
+        // Mark as failed so we can retry later
+        await this.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed' WHERE id = ?
+        `).bind(pendingMessage.id).run();
+        
+        return {
+          success: false,
+          error: error.message,
+          mediaKey: null
+        };
+      }
       
       // CRITICAL: Verify buffer before uploading
       if (!buffer || buffer.length === 0) {

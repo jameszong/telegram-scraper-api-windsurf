@@ -1,20 +1,29 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { API_BASE, authenticatedFetch } from '../utils/api';
 
-export const useChannelStore = create((set, get) => ({
-  // State
-  channels: [],
-  selectedChannel: null,
-  isLoading: false,
-  error: null,
-  
-  // Actions
-  setLoading: (loading) => set({ isLoading: loading }),
-  setError: (error) => set({ error }),
-  clearError: () => set({ error: null }),
-  
-  setChannels: (channels) => set({ channels }),
-  setSelectedChannel: (channel) => set({ selectedChannel: channel }),
+export const useChannelStore = create(
+  persist(
+    (set, get) => ({
+      // State
+      channels: [],
+      selectedChannel: null,
+      isLoading: false,
+      error: null,
+      
+      // Actions
+      setLoading: (loading) => set({ isLoading: loading }),
+      setError: (error) => set({ error }),
+      clearError: () => set({ error: null }),
+      
+      setChannels: (channels) => set({ channels }),
+      setSelectedChannel: (channel) => {
+        set({ selectedChannel: channel });
+        // Also save to localStorage for persistence
+        if (channel?.id) {
+          localStorage.setItem('lastChannelId', channel.id);
+        }
+      },
   
   // API Actions
   fetchChannels: async () => {
@@ -79,5 +88,22 @@ export const useChannelStore = create((set, get) => ({
       });
       return { success: false, error: 'Network error' };
     }
+  },
+  
+  // Initialize selected channel from localStorage
+  initializeFromStorage: () => {
+    const lastChannelId = localStorage.getItem('lastChannelId');
+    if (lastChannelId) {
+      const { channels } = get();
+      const selected = channels.find(ch => ch.id === lastChannelId);
+      if (selected) {
+        set({ selectedChannel: selected });
+      }
+    }
   }
-}));
+}),
+  {
+    name: 'channel-storage',
+    partialize: (state) => ({ selectedChannel: state.selectedChannel })
+  }
+);

@@ -14,6 +14,7 @@ export const Dashboard = () => {
     channels, 
     selectedChannel, 
     fetchChannels, 
+    initializeFromStorage,
     isLoading: channelsLoading 
   } = useChannelStore();
   const { 
@@ -32,6 +33,13 @@ export const Dashboard = () => {
       fetchChannels();
     }
   }, [isLoggedIn, fetchChannels]);
+  
+  useEffect(() => {
+    if (channels.length > 0) {
+      // Initialize selected channel from localStorage after channels are loaded
+      initializeFromStorage();
+    }
+  }, [channels, initializeFromStorage]);
   
   useEffect(() => {
     if (selectedChannel) {
