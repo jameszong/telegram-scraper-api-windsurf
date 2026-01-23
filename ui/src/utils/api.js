@@ -30,7 +30,24 @@ export const createAuthenticatedFetch = () => {
   };
 };
 
+// Create a fetch function for internal microservice communication
+export const createInternalFetch = () => {
+  return async (url, options = {}) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Internal-Key': 'telegram-archiver-internal-2024',
+      ...options.headers,
+    };
+    
+    return fetch(url, {
+      ...options,
+      headers,
+    });
+  };
+};
+
 export const authenticatedFetch = createAuthenticatedFetch();
+export const internalFetch = createInternalFetch();
 
 // Export microservice URLs for stores to use
 export { API_BASE, SCANNER_URL, PROCESSOR_URL, VIEWER_URL };

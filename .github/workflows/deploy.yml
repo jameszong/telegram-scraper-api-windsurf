@@ -100,7 +100,23 @@ jobs:
             };
           };
 
+          export const createInternalFetch = () => {
+            return async (url, options = {}) => {
+              const headers = {
+                'Content-Type': 'application/json',
+                'X-Internal-Key': 'telegram-archiver-internal-2024',
+                ...options.headers,
+              };
+              
+              return fetch(url, {
+                ...options,
+                headers,
+              });
+            };
+          };
+
           export const authenticatedFetch = createAuthenticatedFetch();
+          export const internalFetch = createInternalFetch();
           export { API_BASE, SCANNER_URL, PROCESSOR_URL, VIEWER_URL };
           EOF
 

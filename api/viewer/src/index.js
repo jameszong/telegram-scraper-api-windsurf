@@ -13,7 +13,7 @@ app.use('/*', cors({
   credentials: true,
 }));
 
-// STEP 2: Access Key Middleware
+// STEP 2: Internal Service Auth Middleware
 app.use('/*', async (c, next) => {
   // Skip check for OPTIONS requests
   if (c.req.method === 'OPTIONS') {
@@ -31,21 +31,36 @@ app.use('/*', async (c, next) => {
     return next();
   }
   
+  const internalKey = c.req.header('X-Internal-Key');
   const accessKey = c.req.header('X-Access-Key');
   
-  if (!accessKey) {
-    return c.json({ error: 'Access key required' }, 401);
+  // Allow either internal key (for microservice communication) or access key (for frontend)
+  if (!internalKey && !accessKey) {
+    return c.json({ error: 'Authentication required' }, 401);
   }
   
-  // CRITICAL FIX: Read ACCESS_KEY from D1 instead of environment variables
-  const storedKey = await c.env.DB.prepare("SELECT value FROM app_config WHERE key = 'ACCESS_KEY'").first();
-  
-  if (!storedKey || !storedKey.value || storedKey.value !== accessKey) {
-    console.error('[Viewer Auth] Invalid access key provided');
-    return c.json({ error: 'Invalid access key' }, 401);
+  // Check internal key first (for microservice communication)
+  if (internalKey) {
+    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY || 'telegram-archiver-internal-2024';
+    if (internalKey !== INTERNAL_SERVICE_KEY) {
+      console.error('[Viewer Auth] Invalid internal key provided');
+      return c.json({ error: 'Invalid internal key' }, 401);
+    }
+    console.log('[Viewer Auth] Internal key validated successfully');
+    await next();
+    return;
   }
   
-  console.log('[Viewer Auth] Access key validated successfully');
+  // Check access key (for frontend communication)
+  if (accessKey) {
+    const storedKey = await c.env.DB.prepare("SELECT value FROM app_config WHERE key = 'ACCESS_KEY'").first();
+    if (!storedKey || !storedKey.value || storedKey.value !== accessKey) {
+      console.error('[Viewer Auth] Invalid access key provided');
+      return c.json({ error: 'Invalid access key' }, 401);
+    }
+    console.log('[Viewer Auth] Access key validated successfully');
+  }
+  
   await next();
 });
 

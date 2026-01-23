@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SCANNER_URL, PROCESSOR_URL, VIEWER_URL, authenticatedFetch } from '../utils/api';
+import { SCANNER_URL, PROCESSOR_URL, VIEWER_URL, authenticatedFetch, internalFetch } from '../utils/api';
 import { useChannelStore } from './channelStore';
 
 export const useMessageStore = create((set, get) => ({
@@ -204,7 +204,7 @@ export const useMessageStore = create((set, get) => ({
       
       console.log(`Debug: Phase B - Processing media batch ${i + 1}/${maxMediaBatches}`);
       
-      const response = await authenticatedFetch(`${PROCESSOR_URL}/process-media`, {
+      const response = await internalFetch(`${PROCESSOR_URL}/process-media`, {
         method: 'POST'
       });
       
