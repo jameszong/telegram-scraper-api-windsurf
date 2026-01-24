@@ -149,7 +149,8 @@ app.get('/messages', async (c) => {
     // Fetch messages with media info
     const messages = await c.env.DB.prepare(`
       SELECT m.id, m.telegram_message_id, m.chat_id, m.text, m.date, m.created_at, m.grouped_id,
-             m.media_status, m.media_type, m.media_key
+             m.media_status, m.media_type, m.media_key,
+             m.media_key as r2_key  -- Add alias for frontend compatibility
       FROM messages m
       WHERE m.chat_id = ?
       ORDER BY m.date DESC

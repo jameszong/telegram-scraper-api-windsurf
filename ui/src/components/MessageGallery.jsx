@@ -102,10 +102,11 @@ const MessageGallery = () => {
     });
     
     if (message.isGroup && message.media_group) {
-      // Filter media_group to only include completed items with media_key or media_url
-      const completedMedia = message.media_group.filter(m => 
-        m.media_status === 'completed' && (m.media_key || m.media_url)
-      );
+      // Filter media_group to only include completed items with media keys
+      const completedMedia = message.media_group.filter(m => {
+        const fileKey = m.r2_key || m.media_key || m.media?.r2_key;
+        return m.media_status === 'completed' && (fileKey || m.media_url);
+      });
       
       console.log('[MessageGallery] Group completed media:', {
         totalInGroup: message.media_group.length,
@@ -113,7 +114,9 @@ const MessageGallery = () => {
         completedMedia: completedMedia.map(m => ({
           id: m.telegram_message_id,
           media_key: m.media_key,
-          media_url: m.media_url
+          r2_key: m.r2_key,
+          media_url: m.media_url,
+          fileKey: m.r2_key || m.media_key || m.media?.r2_key
         }))
       });
       
@@ -126,26 +129,32 @@ const MessageGallery = () => {
       } else {
         console.warn('[MessageGallery] No completed media found in group');
       }
-    } else if (message.media_key || message.media_url) {
-      // Single image
-      console.log('[MessageGallery] Opening single image modal:', {
-        messageId: message.telegram_message_id,
-        media_key: message.media_key,
-        media_url: message.media_url
-      });
-      
-      setGalleryModal({
-        isOpen: true,
-        images: [message],
-        initialIndex: 0
-      });
     } else {
-      console.warn('[MessageGallery] No media available for modal:', {
-        messageId: message.telegram_message_id,
-        media_status: message.media_status,
-        media_key: message.media_key,
-        media_url: message.media_url
-      });
+      const fileKey = message.r2_key || message.media_key || message.media?.r2_key;
+      if (fileKey || message.media_url) {
+        // Single image
+        console.log('[MessageGallery] Opening single image modal:', {
+          messageId: message.telegram_message_id,
+          fileKey,
+          media_url: message.media_url,
+          r2_key: message.r2_key,
+          media_key: message.media_key
+        });
+        
+        setGalleryModal({
+          isOpen: true,
+          images: [message],
+          initialIndex: 0
+        });
+      } else {
+        console.warn('[MessageGallery] No media available for modal:', {
+          messageId: message.telegram_message_id,
+          media_status: message.media_status,
+          r2_key: message.r2_key,
+          media_key: message.media_key,
+          media_url: message.media_url
+        });
+      }
     }
   };
 
@@ -191,7 +200,10 @@ const MessageGallery = () => {
         }
       }
       
-      const completedCount = msg.media_group.filter(m => m.media_status === 'completed' && (m.media_key || m.media_url)).length;
+      const completedCount = msg.media_group.filter(m => {
+        const fileKey = m.r2_key || m.media_key || m.media?.r2_key;
+        return m.media_status === 'completed' && (fileKey || m.media_url);
+      }).length;
       const totalCount = msg.media_group.length;
       
       console.log('[MessageGallery] Group media status:', {
@@ -238,12 +250,22 @@ const MessageGallery = () => {
         });
         
         // If expected fields are missing, log all keys to find the correct one
-        if (!msg.media_key && !msg.media_url) {
+        const fileKey = msg.r2_key || msg.media_key || msg.media?.r2_key;
+        
+        if (!fileKey && !msg.media_url) {
           console.warn(`[MessageGallery] Missing media fields for message ${msg.telegram_message_id}. Available keys:`, Object.keys(msg));
           console.warn(`[MessageGallery] Full message object for debugging:`, msg);
         }
         
-        if (msg.media_key || msg.media_url) {
+        if (fileKey || msg.media_url) {
+          console.log('[MessageGallery] Found media key for message:', {
+            messageId: msg.telegram_message_id,
+            fileKey,
+            media_url: msg.media_url,
+            r2_key: msg.r2_key,
+            media_key: msg.media_key
+          });
+          
           return (
             <button
               onClick={() => openGalleryModal(msg, 0)}

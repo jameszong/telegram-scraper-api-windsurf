@@ -174,9 +174,14 @@ export class ProcessorSyncService {
       }
 
       // Update database with media key and completed status
-      await this.env.DB.prepare(`
-        UPDATE messages SET media_key = ?, media_status = 'completed' WHERE id = ?
-      `).bind(key, pendingMessage.id).run();
+      console.log(`[Processor] Updating DB for message ${pendingMessage.telegram_message_id} with key: ${key}`);
+      
+      // CRITICAL FIX: Use telegram_message_id instead of internal id
+      const { success: updateSuccess, meta: updateMeta } = await this.env.DB.prepare(`
+        UPDATE messages SET media_key = ?, media_status = 'completed' WHERE telegram_message_id = ?
+      `).bind(key, pendingMessage.telegram_message_id).run();
+      
+      console.log("[Processor] Updated DB status for msg", pendingMessage.telegram_message_id, "Success:", updateSuccess, "Changes:", updateMeta?.changes);
 
       // Also save to media table for compatibility
       const mediaData = {
