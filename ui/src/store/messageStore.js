@@ -431,5 +431,4 @@ export const useMessageStore = create(
       console.log('[MessageStore] No persisted state found, starting fresh');
     }
   }
-},
-);
+}),
