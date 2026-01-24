@@ -382,13 +382,20 @@ const MessageGallery = () => {
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xl break-words">
                     {msg.isGroup ? (
                       <div>
-                        <span className="text-gray-400 dark:text-gray-500 italic">
-                          🖼️ Album ({msg.groupSize} images)
-                        </span>
-                        {msg.text && (
-                          <div className="mt-1 text-gray-600 dark:text-gray-400 text-sm">
-                            {msg.text}
+                        {/* CRITICAL: Show actual text first, then album badge */}
+                        {msg.text ? (
+                          <div>
+                            <span className="text-gray-900 dark:text-gray-100">
+                              {msg.text}
+                            </span>
+                            <span className="ml-2 text-gray-400 dark:text-gray-500 italic text-sm">
+                              🖼️ Album (+{msg.groupSize})
+                            </span>
                           </div>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 italic">
+                            🖼️ Album ({msg.groupSize} images)
+                          </span>
                         )}
                       </div>
                     ) : (

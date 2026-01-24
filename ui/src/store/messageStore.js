@@ -375,9 +375,12 @@ export const useMessageStore = create(
         error: 'Media processing failed: ' + error.message
       });
     } finally {
-      // CRITICAL: Always reset isProcessing state
-      console.log('[Phase B] Finally block - Resetting isProcessing to false');
-      set({ isProcessing: false });
+      // CRITICAL: Always reset isProcessing and loading states
+      console.log('[Phase B] Finally block - Resetting isProcessing and loading to false');
+      set({ 
+        isProcessing: false,
+        isLoading: false
+      });
     }
   },
 
