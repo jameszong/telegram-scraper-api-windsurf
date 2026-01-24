@@ -244,131 +244,141 @@ export const useMessageStore = create(
   },
 
   phaseBMediaProcessing: async () => {
-    set({ 
-      syncStatus: 'Phase B: Processing media queue...',
-      isProcessing: true
-    });
-    
-    let processedCount = 0;
-    const maxMediaBatches = 50; // Process up to 50 media files
-    
-    for (let i = 0; i < maxMediaBatches; i++) {
+    try {
       set({ 
-        syncProgress: i + 1, 
-        syncStatus: `Phase B: Processing media ${i + 1}/${maxMediaBatches}...` 
+        syncStatus: 'Phase B: Processing media queue...',
+        isProcessing: true
       });
       
-      console.log(`Debug: Phase B - Processing media batch ${i + 1}/${maxMediaBatches}`);
+      let processedCount = 0;
+      const maxMediaBatches = 50; // Process up to 50 media files
       
-      const response = await internalFetch(`${PROCESSOR_URL}/process-media`, {
-        method: 'POST'
-      });
-      
-      // CRITICAL: Check HTTP status for credential errors before parsing JSON
-      if (response.status === 401) {
-        console.error('[Phase B] HTTP 401 Unauthorized - Credential error detected');
+      for (let i = 0; i < maxMediaBatches; i++) {
         set({ 
-          isProcessing: false,
-          syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
-          error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
+          syncProgress: i + 1, 
+          syncStatus: `Phase B: Processing media ${i + 1}/${maxMediaBatches}...` 
         });
-        return; // Stop the loop immediately
-      }
-      
-      const data = await response.json();
-      
-      console.log(`Debug: Phase B - Processor response:`, data);
-      
-      if (data && data.success) {
-        if (data.remaining === 0) {
-          console.log(`Debug: Phase B - No more media to process`);
-          set({ 
-            syncStatus: `Phase B: Media processing complete! Processed ${processedCount} items.` 
-          });
-          break;
-        }
         
-        if (data.processedId) {
-          processedCount++;
-          console.log(`Debug: Phase B - Processed 1 media item. Queue remaining: ${data.remaining}`);
-          console.log(`Debug: Phase B - Processor response data:`, {
-            messageId: data.messageId,
-            mediaKey: data.mediaKey,
-            skipped: data.skipped,
-            skipReason: data.skipReason
-          });
-          
-          // Update local messages state to include new media_url for instant display
-          const { messages } = get();
-          const updatedMessages = messages.map(msg => {
-            if (msg.telegram_message_id === data.messageId) {
-              console.log(`Debug: Phase B - Updating message ${data.messageId} with mediaKey: ${data.mediaKey}`);
-              
-              if (data.skipped) {
-                // Update status for skipped items
-                return { 
-                  ...msg, 
-                  media_status: data.skipReason?.includes('large') ? 'skipped_large' : 
-                              data.skipReason?.includes('type') ? 'skipped_type' : 'skipped'
-                };
-              } else if (data.mediaKey) {
-                // Update status and media info for successfully processed items
-                return { 
-                  ...msg, 
-                  media_status: 'completed', 
-                  media_key: data.mediaKey,
-                  media_url: `${VIEWER_URL}/media/${data.mediaKey}`
-                };
-              }
-            }
-            return msg;
-          });
-          
-          set({ messages: updatedMessages });
-          
-          set({ 
-            syncStatus: `Phase B: Processing media queue: ${data.remaining} remaining... (Processed: ${processedCount})` 
-          });
-        }
+        console.log(`Debug: Phase B - Processing media batch ${i + 1}/${maxMediaBatches}`);
         
-        // Dynamic cooldown for media processing (CPU intensive)
-        const cooldown = 2000; // 2 second delay for CPU recovery
-        console.log(`Debug: Phase B - Waiting ${cooldown}ms for CPU recovery...`);
-        await new Promise(resolve => setTimeout(resolve, cooldown));
-      } else {
-        console.error(`Debug: Phase B - Media processing failed:`, data?.error || 'Unknown error');
+        const response = await internalFetch(`${PROCESSOR_URL}/process-media`, {
+          method: 'POST'
+        });
         
-        // CRITICAL: Check for credential errors and abort immediately
-        if (data?.error && (
-          data.error.includes('credentials not found') ||
-          data.error.includes('Telegram credentials') ||
-          data.error.includes('D1 app_config')
-        )) {
-          console.error('[Phase B] Credential error detected - ABORTING media processing');
+        // CRITICAL: Check HTTP status for credential errors before parsing JSON
+        if (response.status === 401) {
+          console.error('[Phase B] HTTP 401 Unauthorized - Credential error detected');
           set({ 
-            isProcessing: false,
             syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
             error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
           });
           return; // Stop the loop immediately
         }
         
-        // Don't throw error for other media processing failures, just continue
-        console.log(`Debug: Phase B - Continuing despite media processing error...`);
+        const data = await response.json();
+        
+        console.log(`Debug: Phase B - Processor response:`, data);
+        
+        // CRITICAL FIX: Use optional chaining for response.data.success
+        if (data && data.success) {
+          if (data.remaining === 0) {
+            console.log(`Debug: Phase B - No more media to process`);
+            set({ 
+              syncStatus: `Phase B: Media processing complete! Processed ${processedCount} items.` 
+            });
+            break;
+          }
+          
+          if (data.processedId) {
+            processedCount++;
+            console.log(`Debug: Phase B - Processed 1 media item. Queue remaining: ${data.remaining}`);
+            console.log(`Debug: Phase B - Processor response data:`, {
+              messageId: data.messageId,
+              mediaKey: data.mediaKey,
+              skipped: data.skipped,
+              skipReason: data.skipReason
+            });
+            
+            // Update local messages state to include new media_url for instant display
+            const { messages } = get();
+            const updatedMessages = messages.map(msg => {
+              if (msg.telegram_message_id === data.messageId) {
+                console.log(`Debug: Phase B - Updating message ${data.messageId} with mediaKey: ${data.mediaKey}`);
+                
+                if (data.skipped) {
+                  // Update status for skipped items
+                  return { 
+                    ...msg, 
+                    media_status: data.skipReason?.includes('large') ? 'skipped_large' : 
+                                data.skipReason?.includes('type') ? 'skipped_type' : 'skipped'
+                  };
+                } else if (data.mediaKey) {
+                  // Update status and media info for successfully processed items
+                  return { 
+                    ...msg, 
+                    media_status: 'completed', 
+                    media_key: data.mediaKey,
+                    media_url: `${VIEWER_URL}/media/${data.mediaKey}`
+                  };
+                }
+              }
+              return msg;
+            });
+            
+            set({ messages: updatedMessages });
+            
+            set({ 
+              syncStatus: `Phase B: Processing media queue: ${data.remaining} remaining... (Processed: ${processedCount})` 
+            });
+          }
+          
+          // Dynamic cooldown for media processing (CPU intensive)
+          const cooldown = 2000; // 2 second delay for CPU recovery
+          console.log(`Debug: Phase B - Waiting ${cooldown}ms for CPU recovery...`);
+          await new Promise(resolve => setTimeout(resolve, cooldown));
+        } else {
+          console.error(`Debug: Phase B - Media processing failed:`, data?.error || 'Unknown error');
+          
+          // CRITICAL: Check for credential errors and abort immediately
+          if (data?.error && (
+            data.error.includes('credentials not found') ||
+            data.error.includes('Telegram credentials') ||
+            data.error.includes('D1 app_config')
+          )) {
+            console.error('[Phase B] Credential error detected - ABORTING media processing');
+            set({ 
+              syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
+              error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
+            });
+            return; // Stop the loop immediately
+          }
+          
+          // Don't throw error for other media processing failures, just continue
+          console.log(`Debug: Phase B - Continuing despite media processing error...`);
+        }
       }
+      
+      console.log(`Debug: Phase B completed - Total media processed: ${processedCount}`);
+      
+      // CRITICAL: Force refresh messages after processing to update Archive list
+      const { selectedChannel } = useChannelStore.getState();
+      if (selectedChannel && selectedChannel.id) {
+        console.log(`Debug: Phase B - Forcing message refresh for channel ${selectedChannel.id}`);
+        const { fetchMessages } = get();
+        await fetchMessages(50, true, selectedChannel.id);
+      }
+      
+    } catch (error) {
+      console.error('[Phase B] Unexpected error:', error);
+      set({ 
+        syncStatus: 'Error: Media processing failed - ' + error.message,
+        error: 'Media processing failed: ' + error.message
+      });
+    } finally {
+      // CRITICAL: Always reset isProcessing state
+      console.log('[Phase B] Finally block - Resetting isProcessing to false');
+      set({ isProcessing: false });
     }
-    
-    console.log(`Debug: Phase B completed - Total media processed: ${processedCount}`);
-    
-    // CRITICAL: Force refresh messages after processing to update Archive list
-    const { selectedChannel } = useChannelStore.getState();
-    if (selectedChannel && selectedChannel.id) {
-      console.log(`Debug: Phase B - Forcing message refresh for channel ${selectedChannel.id}`);
-      const { fetchMessages } = get();
-      await fetchMessages(50, true, selectedChannel.id);
-    }
-    
-    set({ isProcessing: false });
   },
 
   // Auto-polling for real-time updates

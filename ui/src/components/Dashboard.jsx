@@ -43,6 +43,14 @@ export const Dashboard = () => {
   useEffect(() => {
     initializeFromStorage();
   }, [channels, initializeFromStorage]);
+
+  // CRITICAL: Trigger fetchMessages when switching to Archive tab
+  useEffect(() => {
+    if (activeTab === 'archive' && selectedChannel) {
+      console.log('[Dashboard] Switched to Archive tab, fetching messages for channel:', selectedChannel.id);
+      fetchMessages(50, true, selectedChannel.id);
+    }
+  }, [activeTab, selectedChannel, fetchMessages]);
   
   const handleSync = async () => {
     if (!selectedChannel) return;

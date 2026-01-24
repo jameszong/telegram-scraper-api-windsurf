@@ -24,7 +24,10 @@ const groupMessages = (messages) => {
           ...message,
           media_group: [message],
           isGroup: true,
-          groupSize: 1
+          groupSize: 1,
+          // CRITICAL: Inheritance Rule - preserve the text from the first message
+          text: message.text || '',
+          originalMessageId: message.telegram_message_id
         };
         result.push(groups[groupId]);
         groupCount++;
@@ -32,6 +35,12 @@ const groupMessages = (messages) => {
         // Add to existing group
         groups[groupId].media_group.push(message);
         groups[groupId].groupSize = groups[groupId].media_group.length;
+        
+        // CRITICAL: Inheritance Rule - if group text is empty and this message has text, inherit it
+        if (!groups[groupId].text && message.text) {
+          groups[groupId].text = message.text;
+          console.log(`[useArchiver] Inherited text for group ${groupId}: "${message.text}"`);
+        }
       }
     } else {
       // Individual message, add directly
@@ -127,6 +136,19 @@ export const useArchiver = () => {
       }
     };
   }, [isProcessing, isSyncing, startPolling]);
+
+  // CRITICAL: Stale check for isProcessing state
+  useEffect(() => {
+    if (isProcessing) {
+      const staleTimer = setTimeout(() => {
+        console.warn('[useArchiver] isProcessing stuck for 30s, forcing reset');
+        const { setProcessing } = useMessageStore.getState();
+        setProcessing(false);
+      }, 30000);
+
+      return () => clearTimeout(staleTimer);
+    }
+  }, [isProcessing]);
 
   // Combined sync function
   const startSync = async () => {
