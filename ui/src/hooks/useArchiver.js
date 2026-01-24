@@ -6,8 +6,12 @@ import { useChannelStore } from '../store/channelStore';
 const groupMessages = (messages) => {
   if (!messages || messages.length === 0) return [];
   
+  console.log(`[useArchiver] Processing ${messages.length} messages for grouping`);
+  
   const groups = {};
   const result = [];
+  let groupCount = 0;
+  let individualCount = 0;
   
   for (const message of messages) {
     const groupId = message.grouped_id;
@@ -23,6 +27,7 @@ const groupMessages = (messages) => {
           groupSize: 1
         };
         result.push(groups[groupId]);
+        groupCount++;
       } else {
         // Add to existing group
         groups[groupId].media_group.push(message);
@@ -35,8 +40,11 @@ const groupMessages = (messages) => {
         isGroup: false,
         media_group: []
       });
+      individualCount++;
     }
   }
+  
+  console.log(`[useArchiver] Grouping complete: ${groupCount} groups, ${individualCount} individual messages`);
   
   return result;
 };
@@ -63,10 +71,29 @@ export const useArchiver = () => {
   // Load history when channel changes
   useEffect(() => {
     if (selectedChannel && selectedChannel.id) {
-      console.log(`[useArchiver] Loading history for channel ${selectedChannel.id}`);
-      fetchMessages(50, true, selectedChannel.id).catch(error => {
-        console.error('[useArchiver] Failed to load history:', error);
-      });
+      console.log(`[useArchiver] Loading history for channel ${selectedChannel.id} (${selectedChannel.title})`);
+      
+      // Set loading state to prevent "No messages" flash
+      const { setLoading } = useMessageStore.getState();
+      setLoading(true);
+      
+      fetchMessages(50, true, selectedChannel.id)
+        .then(result => {
+          console.log(`[useArchiver] History load result:`, {
+            success: result?.success,
+            messageCount: result?.messages?.length || 0,
+            hasMore: result?.hasMore,
+            error: result?.error
+          });
+        })
+        .catch(error => {
+          console.error('[useArchiver] Failed to load history:', error);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      console.log('[useArchiver] No selected channel, skipping history load');
     }
   }, [selectedChannel?.id, fetchMessages]);
 

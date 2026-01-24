@@ -35,18 +35,8 @@ export const Dashboard = () => {
   }, [isLoggedIn, fetchChannels]);
   
   useEffect(() => {
-    if (channels.length > 0) {
-      // Initialize selected channel from localStorage after channels are loaded
-      initializeFromStorage();
-    }
+    initializeFromStorage();
   }, [channels, initializeFromStorage]);
-  
-  useEffect(() => {
-    if (selectedChannel) {
-      console.log('Debug: Channel switched to:', selectedChannel.id, selectedChannel.title);
-      fetchMessages(50, true, selectedChannel.id);
-    }
-  }, [selectedChannel?.id, fetchMessages]); // Use selectedChannel?.id for better reactivity
   
   const handleSync = async () => {
     if (!selectedChannel) return;

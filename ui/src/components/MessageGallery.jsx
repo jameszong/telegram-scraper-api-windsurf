@@ -95,22 +95,56 @@ const MessageGallery = () => {
 
   // Handle opening gallery modal for groups
   const openGalleryModal = (message, index = 0) => {
+    console.log('[MessageGallery] Opening gallery modal:', {
+      isGroup: message.isGroup,
+      messageId: message.telegram_message_id,
+      index
+    });
+    
     if (message.isGroup && message.media_group) {
-      // Filter media_group to only include completed items with r2_key
-      const completedMedia = message.media_group.filter(m => m.media_status === 'completed' && m.r2_key);
+      // Filter media_group to only include completed items with media_key or media_url
+      const completedMedia = message.media_group.filter(m => 
+        m.media_status === 'completed' && (m.media_key || m.media_url)
+      );
+      
+      console.log('[MessageGallery] Group completed media:', {
+        totalInGroup: message.media_group.length,
+        completedCount: completedMedia.length,
+        completedMedia: completedMedia.map(m => ({
+          id: m.telegram_message_id,
+          media_key: m.media_key,
+          media_url: m.media_url
+        }))
+      });
+      
       if (completedMedia.length > 0) {
         setGalleryModal({
           isOpen: true,
           images: completedMedia,
           initialIndex: index
         });
+      } else {
+        console.warn('[MessageGallery] No completed media found in group');
       }
-    } else if (message.r2_key) {
+    } else if (message.media_key || message.media_url) {
       // Single image
+      console.log('[MessageGallery] Opening single image modal:', {
+        messageId: message.telegram_message_id,
+        media_key: message.media_key,
+        media_url: message.media_url
+      });
+      
       setGalleryModal({
         isOpen: true,
         images: [message],
         initialIndex: 0
+      });
+    } else {
+      console.warn('[MessageGallery] No media available for modal:', {
+        messageId: message.telegram_message_id,
+        media_status: message.media_status,
+        media_key: message.media_key,
+        media_url: message.media_url
       });
     }
   };
@@ -131,8 +165,20 @@ const MessageGallery = () => {
 
     // 2. Handle grouped messages
     if (msg.isGroup) {
-      const completedCount = msg.media_group.filter(m => m.media_status === 'completed' && m.r2_key).length;
+      console.log('[MessageGallery] Processing group message:', {
+        groupId: msg.grouped_id,
+        groupSize: msg.groupSize,
+        media_group: msg.media_group
+      });
+      
+      const completedCount = msg.media_group.filter(m => m.media_status === 'completed' && (m.media_key || m.media_url)).length;
       const totalCount = msg.media_group.length;
+      
+      console.log('[MessageGallery] Group media status:', {
+        completedCount,
+        totalCount,
+        hasCompletedMedia: completedCount > 0
+      });
       
       if (completedCount > 0) {
         return (
@@ -156,7 +202,14 @@ const MessageGallery = () => {
     // 3. Show status based on media_status (individual messages)
     switch (msg.media_status) {
       case 'completed':
-        if (msg.r2_key) {
+        console.log('[MessageGallery] Individual completed message:', {
+          messageId: msg.telegram_message_id,
+          media_status: msg.media_status,
+          media_key: msg.media_key,
+          media_url: msg.media_url
+        });
+        
+        if (msg.media_key || msg.media_url) {
           return (
             <button
               onClick={() => openGalleryModal(msg, 0)}
