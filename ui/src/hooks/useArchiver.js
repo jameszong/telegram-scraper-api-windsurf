@@ -27,7 +27,9 @@ const groupMessages = (messages) => {
           groupSize: 1,
           // CRITICAL: Inheritance Rule - preserve the text from the first message
           text: message.text || '',
-          originalMessageId: message.telegram_message_id
+          originalMessageId: message.telegram_message_id,
+          // Track if we've found text for this group
+          hasText: !!message.text
         };
         result.push(groups[groupId]);
         groupCount++;
@@ -36,9 +38,11 @@ const groupMessages = (messages) => {
         groups[groupId].media_group.push(message);
         groups[groupId].groupSize = groups[groupId].media_group.length;
         
-        // CRITICAL: Inheritance Rule - if group text is empty and this message has text, inherit it
-        if (!groups[groupId].text && message.text) {
+        // CRITICAL: Inheritance Rule - find the FIRST message with non-empty text
+        if (!groups[groupId].hasText && message.text && message.text.trim()) {
           groups[groupId].text = message.text;
+          groups[groupId].hasText = true;
+          groups[groupId].originalMessageId = message.telegram_message_id;
           console.log(`[useArchiver] Inherited text for group ${groupId}: "${message.text}"`);
         }
       }
