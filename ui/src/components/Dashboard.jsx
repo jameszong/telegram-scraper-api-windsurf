@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useChannelStore } from '../store/channelStore';
 import { useMessageStore } from '../store/messageStore';
+import { useArchiver } from '../hooks/useArchiver';
 import { ChannelSelector } from './ChannelSelector';
 import MessageGallery from './MessageGallery';
 import { Button } from './ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
-import { LogOut, RefreshCw, Loader2, Hash, Archive } from 'lucide-react';
+import { LogOut, RefreshCw, Loader2, Hash, Archive, Image } from 'lucide-react';
 
 export const Dashboard = () => {
   const { logout, isLoggedIn } = useAuthStore();
@@ -25,6 +26,11 @@ export const Dashboard = () => {
     fetchMessages,
     isLoading: messagesLoading 
   } = useMessageStore();
+  
+  const { 
+    phaseBMediaProcessing,
+    isProcessing 
+  } = useArchiver();
   
   const [activeTab, setActiveTab] = useState('channels');
   
@@ -88,6 +94,24 @@ export const Dashboard = () => {
                       <>
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Sync Now
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={phaseBMediaProcessing} 
+                    disabled={isProcessing}
+                    variant="default"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Image className="w-4 h-4 mr-2" />
+                        Process Images
                       </>
                     )}
                   </Button>
