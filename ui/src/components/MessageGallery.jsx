@@ -17,6 +17,7 @@ const MessageGallery = () => {
   
   const [selectedImage, setSelectedImage] = useState(null);
   const [galleryModal, setGalleryModal] = useState({ isOpen: false, images: [], initialIndex: 0 });
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Helper to get channel name by ID
   const getChannelName = (id) => {
@@ -403,6 +404,31 @@ const MessageGallery = () => {
           )}
         </tbody>
       </table>
+
+      {/* Load More Button */}
+      {hasMore && !isLoading && validMessages.length > 0 && (
+        <div className="p-4 text-center border-t">
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            {loadingMore ? (
+              <>
+                <span className="inline-block animate-spin mr-2">⏳</span>
+                Loading...
+              </>
+            ) : (
+              <>
+                📄 Load More Messages
+              </>
+            )}
+          </button>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Showing {validMessages.length} messages
+          </p>
+        </div>
+      )}
 
       {/* Image Preview Modal */}
       {selectedImage && (

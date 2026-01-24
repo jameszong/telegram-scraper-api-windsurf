@@ -371,32 +371,9 @@ export const useMessageStore = create(
     set({ isProcessing: false });
   },
 
-  // Auto-polling for real-time updates
-  startPolling: () => {
-    const { isProcessing } = get();
-    if (isProcessing) return; // Already polling
+  return () => clearInterval(pollInterval);
+},
 
-    // CRITICAL: Don't set isProcessing here, it conflicts with media processing state
-    // Use a separate polling state if needed
-    
-    const pollInterval = setInterval(async () => {
-      const { isProcessing: currentlyProcessing } = get();
-      if (!currentlyProcessing) {
-        clearInterval(pollInterval);
-        return;
-      }
-
-      try {
-        const { fetchMessages } = get();
-        await fetchMessages(50, true);
-      } catch (error) {
-        console.error('[MessageStore] Polling error:', error);
-      }
-    }, 5000); // Poll every 5 seconds
-
-    return () => clearInterval(pollInterval);
-  },
-}),
 {
   name: 'message-storage',
   partialize: (state) => ({ 
@@ -416,7 +393,29 @@ export const useMessageStore = create(
       });
     } else {
       console.log('[MessageStore] No persisted state found, starting fresh');
+    return () => clearInterval(pollInterval);
+  },
+})),
+  {
+    name: 'message-storage',
+    partialize: (state) => ({ 
+      messages: state.messages,
+      hasMore: state.hasMore,
+      offset: state.offset,
+      total: state.total
+    }),
+    onRehydrateStorage: () => (state) => {
+      console.log('[MessageStore] onRehydrateStorage called');
+      if (state) {
+        console.log('[MessageStore] Persisted state restored:', {
+          messagesCount: state.messages?.length || 0,
+          hasMore: state.hasMore,
+          offset: state.offset,
+          total: state.total
+        });
+      } else {
+        console.log('[MessageStore] No persisted state found, starting fresh');
+      }
     }
   }
-}
 );
