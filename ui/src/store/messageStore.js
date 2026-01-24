@@ -291,12 +291,35 @@ export const useMessageStore = create(
         if (data.processedId) {
           processedCount++;
           console.log(`Debug: Phase B - Processed 1 media item. Queue remaining: ${data.remaining}`);
+          console.log(`Debug: Phase B - Processor response data:`, {
+            messageId: data.messageId,
+            mediaKey: data.mediaKey,
+            skipped: data.skipped,
+            skipReason: data.skipReason
+          });
           
           // Update local messages state to include new media_url for instant display
           const { messages } = get();
           const updatedMessages = messages.map(msg => {
-            if (msg.telegram_message_id === data.messageId && data.mediaKey) {
-              return { ...msg, media_status: 'completed', media_url: data.mediaKey };
+            if (msg.telegram_message_id === data.messageId) {
+              console.log(`Debug: Phase B - Updating message ${data.messageId} with mediaKey: ${data.mediaKey}`);
+              
+              if (data.skipped) {
+                // Update status for skipped items
+                return { 
+                  ...msg, 
+                  media_status: data.skipReason?.includes('large') ? 'skipped_large' : 
+                              data.skipReason?.includes('type') ? 'skipped_type' : 'skipped'
+                };
+              } else if (data.mediaKey) {
+                // Update status and media info for successfully processed items
+                return { 
+                  ...msg, 
+                  media_status: 'completed', 
+                  media_key: data.mediaKey,
+                  media_url: `${VIEWER_URL}/media/${data.mediaKey}`
+                };
+              }
             }
             return msg;
           });
@@ -336,6 +359,15 @@ export const useMessageStore = create(
     }
     
     console.log(`Debug: Phase B completed - Total media processed: ${processedCount}`);
+    
+    // CRITICAL: Force refresh messages after processing to update Archive list
+    const { selectedChannel } = useChannelStore.getState();
+    if (selectedChannel && selectedChannel.id) {
+      console.log(`Debug: Phase B - Forcing message refresh for channel ${selectedChannel.id}`);
+      const { fetchMessages } = get();
+      await fetchMessages(50, true, selectedChannel.id);
+    }
+    
     set({ isProcessing: false });
   },
 

@@ -156,10 +156,17 @@ app.post('/process-media', async (c) => {
       WHERE media_status = 'pending' OR media_status = 'failed'
     `).first();
 
+    // CRITICAL: Return mediaKey for frontend instant display
+    let mediaKey = null;
+    if (result.success && result.mediaKey) {
+      mediaKey = result.mediaKey;
+    }
+
     return c.json({
       success: true,
       processedId: pendingMessage.id,
       messageId: pendingMessage.telegram_message_id,
+      mediaKey: mediaKey, // Add mediaKey for frontend display
       mediaType: pendingMessage.media_type,
       remaining: remainingCount.count,
       skipped: result.skipped || false,
