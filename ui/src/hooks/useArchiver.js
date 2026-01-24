@@ -77,8 +77,9 @@ export const useArchiver = () => {
     if (selectedChannel && selectedChannel.id) {
       console.log(`[useArchiver] fetchMessages triggered for:`, selectedChannel.id, `(${selectedChannel.title})`);
       console.log(`[useArchiver] Current messages length before fetch:`, messages.length);
+      console.log(`[useArchiver] Sync states - isProcessing: ${isProcessing}, isSyncing: ${isSyncing}`);
       
-      // Set loading state to prevent "No messages" flash
+      // CRITICAL: Call fetchMessages immediately when channelId exists, do NOT wait for sync states
       const { setLoading } = useMessageStore.getState();
       setLoading(true);
       console.log(`[useArchiver] Loading state set to true to prevent 'No messages' flash`);
@@ -108,6 +109,7 @@ export const useArchiver = () => {
     } else {
       console.log('[useArchiver] No selected channel, skipping history load. Current messages length:', messages.length);
     }
+    // CRITICAL: Only depend on selectedChannel?.id, NOT on sync states
   }, [selectedChannel?.id, fetchMessages]);
 
   // Auto-polling effect

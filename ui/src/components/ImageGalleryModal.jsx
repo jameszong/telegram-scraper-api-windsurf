@@ -62,7 +62,25 @@ const ImageGalleryModal = ({ isOpen, onClose, images, initialIndex = 0 }) => {
   }
 
   const currentImage = images[currentIndex];
-  const imageUrl = currentImage.r2_key ? `${VIEWER_URL}/media/${currentImage.r2_key}` : null;
+  
+  // Defensive field mapping: handle flat or nested keys
+  const r2Key = currentImage.r2_key || currentImage.media?.r2_key || currentImage.media_key;
+  
+  console.log('[ImageGalleryModal] Current image field mapping:', {
+    imageIndex: currentIndex,
+    r2_key: currentImage.r2_key,
+    media_r2_key: currentImage.media?.r2_key,
+    media_key: currentImage.media_key,
+    finalR2Key: r2Key,
+    media_url: currentImage.media_url
+  });
+  
+  if (!r2Key && !currentImage.media_url) {
+    console.error('[ImageGalleryModal] No media key found for image:', currentImage);
+    return null;
+  }
+  
+  const imageUrl = r2Key ? `${VIEWER_URL}/media/${r2Key}` : currentImage.media_url;
 
   return (
     <div 

@@ -37,10 +37,19 @@ export const useMessageStore = create(
   fetchMessages: async (limit = 50, reset = false, channelId = null) => {
     const { messages, offset } = get();
     
-    // Use passed channelId or get from store if not provided
-    const selectedChannel = channelId || useChannelStore.getState().selectedChannel;
+    // CRITICAL FIX: Prioritize channelId argument over store state
+    const targetId = channelId || useChannelStore.getState().selectedChannel?.id;
     
-    if (!selectedChannel || !selectedChannel.id) {
+    console.log('[MessageStore] fetchMessages called with:', {
+      limit,
+      reset,
+      channelIdArg: channelId,
+      storeChannelId: useChannelStore.getState().selectedChannel?.id,
+      targetId
+    });
+    
+    if (!targetId) {
+      console.error('[MessageStore] No channel ID available for fetchMessages');
       set({ error: 'No channel selected', isLoading: false });
       return { success: false, error: 'No channel selected' };
     }
@@ -53,8 +62,10 @@ export const useMessageStore = create(
     
     try {
       const currentOffset = reset ? 0 : offset;
-      // CRITICAL: Use VIEWER_URL for read-only message fetching
-      const response = await authenticatedFetch(`${VIEWER_URL}/messages?channelId=${selectedChannel.id}&limit=${limit}&offset=${currentOffset}`);
+      // CRITICAL: Use targetId from argument prioritization
+      const response = await authenticatedFetch(`${VIEWER_URL}/messages?channelId=${targetId}&limit=${limit}&offset=${currentOffset}`);
+      
+      console.log('[MessageStore] API call made to:', `${VIEWER_URL}/messages?channelId=${targetId}&limit=${limit}&offset=${currentOffset}`);
       
       // Check if response exists and is ok
       if (!response || !response.ok) {
@@ -102,7 +113,8 @@ export const useMessageStore = create(
         
         // Enhanced debugging: Log raw API data structure
         if (fetchedMessages.length > 0) {
-          console.log("[useArchiver] Raw API data received - First 2 messages:", 
+          console.log("[MessageStore] Debug Message Structure:", fetchedMessages[0]);
+          console.log("[MessageStore] Raw API data received - First 2 messages:", 
             fetchedMessages.slice(0, 2).map(msg => ({
               telegram_message_id: msg.telegram_message_id,
               media_status: msg.media_status,
