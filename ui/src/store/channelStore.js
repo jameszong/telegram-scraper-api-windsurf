@@ -113,13 +113,24 @@ export const useChannelStore = create(
   
   // Initialize selected channel from localStorage
   initializeFromStorage: () => {
+    console.log('[ChannelStore] initializeFromStorage called');
     const lastChannelId = localStorage.getItem('lastChannelId');
+    console.log('[ChannelStore] Last channelId from localStorage:', lastChannelId);
+    
     if (lastChannelId) {
       const { channels } = get();
+      console.log('[ChannelStore] Available channels:', channels.length);
       const selected = channels.find(ch => ch.id === lastChannelId);
+      console.log('[ChannelStore] Found selected channel:', selected ? selected.title : 'Not found');
+      
       if (selected) {
         set({ selectedChannel: selected });
+        console.log('[ChannelStore] Selected channel restored:', selected.id, selected.title);
+      } else {
+        console.warn('[ChannelStore] Last channel not found in available channels');
       }
+    } else {
+      console.log('[ChannelStore] No last channel ID in localStorage');
     }
   }
 }),

@@ -1,8 +1,11 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { SCANNER_URL, PROCESSOR_URL, VIEWER_URL, authenticatedFetch, internalFetch } from '../utils/api';
 import { useChannelStore } from './channelStore';
 
-export const useMessageStore = create((set, get) => ({
+export const useMessageStore = create(
+  persist(
+    (set, get) => ({
   // State
   messages: [],
   isLoading: false,
@@ -16,7 +19,10 @@ export const useMessageStore = create((set, get) => ({
   total: null, // Add total count for pagination
   
   // Actions
-  setLoading: (loading) => set({ isLoading: loading }),
+  setLoading: (loading) => {
+    console.log('[MessageStore] setLoading called with:', loading);
+    set({ isLoading: loading });
+  },
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setProcessing: (processing) => set({ isProcessing: processing }),
   setError: (error) => set({ error }),
@@ -351,4 +357,27 @@ export const useMessageStore = create((set, get) => ({
 
     return () => clearInterval(pollInterval);
   },
-}));
+})),
+  {
+    name: 'message-storage',
+    partialize: (state) => ({ 
+      messages: state.messages,
+      hasMore: state.hasMore,
+      offset: state.offset,
+      total: state.total
+    }),
+    onRehydrateStorage: () => (state) => {
+      console.log('[MessageStore] onRehydrateStorage called');
+      if (state) {
+        console.log('[MessageStore] Persisted state restored:', {
+          messagesCount: state.messages?.length || 0,
+          hasMore: state.hasMore,
+          offset: state.offset,
+          total: state.total
+        });
+      } else {
+        console.log('[MessageStore] No persisted state found, starting fresh');
+      }
+    }
+  }
+);

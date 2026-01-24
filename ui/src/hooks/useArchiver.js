@@ -63,19 +63,25 @@ export const useArchiver = () => {
   } = useMessageStore();
   const { selectedChannel } = useChannelStore();
 
+  // Hook lifecycle logging
+  console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
+
   // Memoized grouped messages
   const groupedMessages = useMemo(() => {
+    console.log("[useArchiver] State update: messages length =", messages.length);
     return groupMessages(messages);
   }, [messages]);
 
   // Load history when channel changes
   useEffect(() => {
     if (selectedChannel && selectedChannel.id) {
-      console.log(`[useArchiver] Loading history for channel ${selectedChannel.id} (${selectedChannel.title})`);
+      console.log(`[useArchiver] fetchMessages triggered for:`, selectedChannel.id, `(${selectedChannel.title})`);
+      console.log(`[useArchiver] Current messages length before fetch:`, messages.length);
       
       // Set loading state to prevent "No messages" flash
       const { setLoading } = useMessageStore.getState();
       setLoading(true);
+      console.log(`[useArchiver] Loading state set to true to prevent 'No messages' flash`);
       
       fetchMessages(50, true, selectedChannel.id)
         .then(result => {
@@ -85,15 +91,22 @@ export const useArchiver = () => {
             hasMore: result?.hasMore,
             error: result?.error
           });
+          
+          if (result?.success) {
+            console.log(`[useArchiver] Successfully loaded ${result?.messages?.length || 0} messages`);
+          } else {
+            console.error(`[useArchiver] Failed to load history:`, result?.error);
+          }
         })
         .catch(error => {
           console.error('[useArchiver] Failed to load history:', error);
         })
         .finally(() => {
           setLoading(false);
+          console.log(`[useArchiver] Loading state set to false`);
         });
     } else {
-      console.log('[useArchiver] No selected channel, skipping history load');
+      console.log('[useArchiver] No selected channel, skipping history load. Current messages length:', messages.length);
     }
   }, [selectedChannel?.id, fetchMessages]);
 
