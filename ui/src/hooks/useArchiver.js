@@ -13,48 +13,73 @@ const groupMessages = (messages) => {
   let groupCount = 0;
   let individualCount = 0;
   
+  // First pass: collect all messages by group
+  const groupMessages = {};
+  const individualMessages = [];
+  
   for (const message of messages) {
     const groupId = message.grouped_id;
     
     if (groupId) {
-      // This message belongs to a group
-      if (!groups[groupId]) {
-        // Create group entry with the first message
-        groups[groupId] = {
-          ...message,
-          media_group: [message],
-          isGroup: true,
-          groupSize: 1,
-          // CRITICAL: Inheritance Rule - preserve the text from the first message
-          text: message.text || '',
-          originalMessageId: message.telegram_message_id,
-          // Track if we've found text for this group
-          hasText: !!message.text
-        };
-        result.push(groups[groupId]);
-        groupCount++;
-      } else {
-        // Add to existing group
-        groups[groupId].media_group.push(message);
-        groups[groupId].groupSize = groups[groupId].media_group.length;
-        
-        // CRITICAL: Inheritance Rule - find the FIRST message with non-empty text
-        if (!groups[groupId].hasText && message.text && message.text.trim()) {
-          groups[groupId].text = message.text;
-          groups[groupId].hasText = true;
-          groups[groupId].originalMessageId = message.telegram_message_id;
-          console.log(`[useArchiver] Inherited text for group ${groupId}: "${message.text}"`);
-        }
+      if (!groupMessages[groupId]) {
+        groupMessages[groupId] = [];
       }
+      groupMessages[groupId].push(message);
     } else {
-      // Individual message, add directly
-      result.push({
-        ...message,
-        isGroup: false,
-        media_group: []
-      });
-      individualCount++;
+      individualMessages.push(message);
     }
+  }
+  
+  // Second pass: create group objects with Master Message logic
+  for (const [groupId, groupMsgs] of Object.entries(groupMessages)) {
+    // CRITICAL: Find the "Master Message" - first message with non-empty text
+    let masterMessage = null;
+    
+    // First, try to find a message with text
+    for (const msg of groupMsgs) {
+      if (msg.text && msg.text.trim()) {
+        masterMessage = msg;
+        break;
+      }
+    }
+    
+    // If no message has text, use the first message as fallback
+    if (!masterMessage) {
+      masterMessage = groupMsgs[0];
+    }
+    
+    // Create group object with Master Message as base
+    const groupObject = {
+      ...masterMessage,
+      media_group: groupMsgs,
+      isGroup: true,
+      isAlbum: true, // Add isAlbum property for UI badge
+      groupSize: groupMsgs.length,
+      text: masterMessage.text || '',
+      originalMessageId: masterMessage.telegram_message_id,
+      hasText: !!(masterMessage.text && masterMessage.text.trim())
+    };
+    
+    console.log(`[useArchiver] Created group ${groupId} with Master Message:`, {
+      masterMessageId: masterMessage.telegram_message_id,
+      hasText: groupObject.hasText,
+      text: groupObject.text,
+      groupSize: groupObject.groupSize
+    });
+    
+    result.push(groupObject);
+    groupCount++;
+  }
+  
+  // Add individual messages
+  for (const message of individualMessages) {
+    result.push({
+      ...message,
+      isGroup: false,
+      isAlbum: false,
+      media_group: []
+    });
+    individualCount++;
   }
   
   console.log(`[useArchiver] Grouping complete: ${groupCount} groups, ${individualCount} individual messages`);

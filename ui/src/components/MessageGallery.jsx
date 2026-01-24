@@ -388,9 +388,11 @@ const MessageGallery = () => {
                             <span className="text-gray-900 dark:text-gray-100">
                               {msg.text}
                             </span>
-                            <span className="ml-2 text-gray-400 dark:text-gray-500 italic text-sm">
-                              🖼️ Album (+{msg.groupSize})
-                            </span>
+                            {msg.isAlbum && (
+                              <span className="ml-2 text-gray-400 dark:text-gray-500 italic text-sm">
+                                🖼️ Album (+{msg.groupSize})
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <span className="text-gray-400 dark:text-gray-500 italic">
