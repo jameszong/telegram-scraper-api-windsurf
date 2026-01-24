@@ -58,39 +58,79 @@ const MessageGallery = () => {
             className="text-yellow-600 dark:text-yellow-400 text-sm" 
             title="Phase B is processing... Please wait"
           >
-            ⏳ Queued
+            ⏳ Pending
           </span>
         );
       case 'processing':
         return (
           <span 
-            className="text-blue-500 dark:text-blue-400 text-sm" 
-            title="Currently downloading..."
+            className="text-blue-600 dark:text-blue-400 text-sm" 
+            title="Currently processing..."
           >
-            🔄 Downloading...
+            🔄 Processing
+          </span>
+        );
+      case 'completed':
+        return (
+          <span 
+            className="text-green-600 dark:text-green-400 text-sm" 
+            title="Processing complete"
+          >
+            ✅ Completed
           </span>
         );
       case 'skipped_large':
         return (
           <span 
-            className="text-gray-500 dark:text-gray-400 text-sm" 
-            title=">300KB - File too large for processing"
+            className="text-orange-600 dark:text-orange-400 text-sm" 
+            title="File too large (>20MB)"
           >
             ⚠️ Too Large
+          </span>
+        );
+      case 'skipped_type':
+        return (
+          <span 
+            className="text-purple-600 dark:text-purple-400 text-sm" 
+            title="Unsupported media type"
+          >
+            ⚠️ Unsupported
           </span>
         );
       case 'failed':
         return (
           <span 
-            className="text-red-500 dark:text-red-400 text-sm" 
-            title="Download failed - will retry"
+            className="text-red-600 dark:text-red-400 text-sm" 
+            title="Processing failed"
           >
             ❌ Failed
           </span>
         );
-      case 'none':
       default:
-        return <span className="text-gray-300 dark:text-gray-600">-</span>;
+        return (
+          <span 
+            className="text-gray-400 dark:text-gray-500 text-sm" 
+            title="No media"
+          >
+            📄 None
+          </span>
+        );
+    }
+  };
+
+  // Handle load more functionality
+  const handleLoadMore = async () => {
+    if (!selectedChannel || loadingMore || isLoading) return;
+    
+    console.log('[MessageGallery] Loading more messages for channel:', selectedChannel.id);
+    
+    try {
+      setLoadingMore(true);
+      await fetchMessages(50, false, selectedChannel.id); // Don't reset, just append
+    } catch (error) {
+      console.error('[MessageGallery] Error loading more messages:', error);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
