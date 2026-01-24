@@ -145,7 +145,7 @@ const MessageGallery = () => {
     if (message.isGroup && message.media_group) {
       // Filter media_group to only include completed items with media keys
       const completedMedia = message.media_group.filter(m => {
-        const fileKey = m.r2_key || m.media_key || m.media?.r2_key;
+        const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
         return m.media_status === 'completed' && (fileKey || m.media_url);
       });
       
@@ -242,7 +242,7 @@ const MessageGallery = () => {
       }
       
       const completedCount = msg.media_group.filter(m => {
-        const fileKey = m.r2_key || m.media_key || m.media?.r2_key;
+        const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
         return m.media_status === 'completed' && (fileKey || m.media_url);
       }).length;
       const totalCount = msg.media_group.length;
@@ -291,7 +291,7 @@ const MessageGallery = () => {
         });
         
         // If expected fields are missing, log all keys to find the correct one
-        const fileKey = msg.r2_key || msg.media_key || msg.media?.r2_key;
+        const fileKey = msg.media_key || msg.r2_key || msg.media?.r2_key || msg.media?.media_key;
         
         if (!fileKey && !msg.media_url) {
           console.warn(`[MessageGallery] Missing media fields for message ${msg.telegram_message_id}. Available keys:`, Object.keys(msg));

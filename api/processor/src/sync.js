@@ -176,10 +176,12 @@ export class ProcessorSyncService {
       // Update database with media key and completed status
       console.log(`[Processor] Updating DB for message ${pendingMessage.telegram_message_id} with key: ${key}`);
       
-      // CRITICAL FIX: Use only telegram_message_id for update to avoid ID drift
+      // CRITICAL: Use telegram_message_id AND chat_id as unique key to match Scanner's storage format
       const { success: updateSuccess, meta: updateMeta } = await this.env.DB.prepare(`
-        UPDATE messages SET media_status = 'completed', media_key = ? WHERE telegram_message_id = ?
-      `).bind(key, String(pendingMessage.telegram_message_id)).run();
+        UPDATE messages 
+        SET media_status = 'completed', media_key = ? 
+        WHERE telegram_message_id = ? AND chat_id = ?
+      `).bind(key, String(pendingMessage.telegram_message_id), String(pendingMessage.chat_id)).run();
       
       console.log("[Processor] Updated DB status for msg", pendingMessage.telegram_message_id, "Success:", updateSuccess, "Changes:", updateMeta?.changes);
 
