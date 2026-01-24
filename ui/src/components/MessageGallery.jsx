@@ -279,6 +279,25 @@ const MessageGallery = () => {
            !text.startsWith('[Service Message]');
   });
 
+  // Debug: Log grouping transformation
+  console.log("[MessageList] Pre-grouping count:", messages.length);
+  console.log("[MessageList] Post-filtering count:", validMessages.length);
+  
+  // Check for grouped messages that should be grouped but aren't
+  const messagesWithGroupedId = messages.filter(msg => msg.grouped_id);
+  console.log("[MessageList] Messages with grouped_id:", messagesWithGroupedId.length);
+  
+  if (messagesWithGroupedId.length > 0) {
+    console.log("[MessageList] Sample grouped_id values:", 
+      messagesWithGroupedId.slice(0, 3).map(msg => ({
+        id: msg.telegram_message_id,
+        grouped_id: msg.grouped_id,
+        grouped_id_type: typeof msg.grouped_id,
+        isGroup: msg.isGroup
+      }))
+    );
+  }
+
   return (
     <div className="overflow-x-auto bg-white dark:bg-zinc-900 shadow rounded-lg">
       <table className="min-w-full divide-y divide-gray-200 dark:divide-zinc-800">
@@ -315,38 +334,50 @@ const MessageGallery = () => {
               </td>
             </tr>
           ) : (
-            validMessages.map((msg) => (
-              <tr key={msg.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {msg.telegram_message_id}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                  {getChannelName(msg.chat_id)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {formatDate(msg.date)}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xl break-words">
-                  {msg.isGroup ? (
-                    <div>
-                      <span className="text-gray-400 dark:text-gray-500 italic">
-                        🖼️ Album ({msg.groupSize} images)
-                      </span>
-                      {msg.text && (
-                        <div className="mt-1 text-gray-600 dark:text-gray-400 text-sm">
-                          {msg.text}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    msg.text || <span className="text-gray-400 dark:text-gray-500 italic">(No text)</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  {renderMediaColumn(msg)}
-                </td>
-              </tr>
-            ))
+            validMessages.map((msg) => {
+              // Fallback UI: Check for grouped messages that should be grouped but aren't
+              if (msg.grouped_id && !msg.isGroup) {
+                console.warn("[MessageList] Fallback: Message has grouped_id but not grouped:", {
+                  id: msg.telegram_message_id,
+                  grouped_id: msg.grouped_id,
+                  grouped_id_type: typeof msg.grouped_id,
+                  text: msg.text?.substring(0, 50) + '...'
+                });
+              }
+              
+              return (
+                <tr key={msg.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {msg.telegram_message_id}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                    {getChannelName(msg.chat_id)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {formatDate(msg.date)}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xl break-words">
+                    {msg.isGroup ? (
+                      <div>
+                        <span className="text-gray-400 dark:text-gray-500 italic">
+                          🖼️ Album ({msg.groupSize} images)
+                        </span>
+                        {msg.text && (
+                          <div className="mt-1 text-gray-600 dark:text-gray-400 text-sm">
+                            {msg.text}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      msg.text || <span className="text-gray-400 dark:text-gray-500 italic">(No text)</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    {renderMediaColumn(msg)}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
