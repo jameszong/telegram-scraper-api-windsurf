@@ -93,6 +93,22 @@ export const useMessageStore = create((set, get) => ({
         }
         
         console.log(`Frontend: Fetched ${fetchedMessages.length} messages, total: ${pagination.total}, hasMore: ${hasMore}`);
+        
+        // Enhanced debugging: Log raw API data structure
+        if (fetchedMessages.length > 0) {
+          console.log("[useArchiver] Raw API data received - First 2 messages:", 
+            fetchedMessages.slice(0, 2).map(msg => ({
+              telegram_message_id: msg.telegram_message_id,
+              media_status: msg.media_status,
+              media_type: msg.media_type,
+              media_key: msg.media_key,
+              media_url: msg.media_url,
+              grouped_id: msg.grouped_id,
+              allKeys: Object.keys(msg)
+            }))
+          );
+        }
+        
         return { success: true, messages: fetchedMessages, hasMore };
       } else {
         set({ 

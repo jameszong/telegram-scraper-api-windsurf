@@ -188,6 +188,25 @@ app.get('/messages', async (c) => {
     // Debug: Log fetched data structure
     console.log(`[Viewer] Fetched ${messages.results?.length || 0} messages from DB for channel ${channelId}`);
     
+    // Enhanced debugging: Log first message media info to identify field names
+    if (messages.results && messages.results.length > 0) {
+      const firstMessage = messages.results[0];
+      console.log("[Viewer] First message media info:", {
+        telegram_message_id: firstMessage.telegram_message_id,
+        media_status: firstMessage.media_status,
+        media_type: firstMessage.media_type,
+        media_key: firstMessage.media_key,
+        media_url: firstMessage.media_url,
+        grouped_id: firstMessage.grouped_id,
+        allKeys: Object.keys(firstMessage)
+      });
+      
+      // Log if media_key exists but media_url is missing
+      if (firstMessage.media_key && !firstMessage.media_url) {
+        console.warn("[Viewer] media_key exists but media_url is null - R2_PUBLIC_URL may not be configured");
+      }
+    }
+    
     // CRITICAL FIX: Return pagination data
     const page = Math.floor(offset / limit) + 1;
     return c.json({

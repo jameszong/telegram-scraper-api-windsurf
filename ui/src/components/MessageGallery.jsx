@@ -171,6 +171,26 @@ const MessageGallery = () => {
         media_group: msg.media_group
       });
       
+      // Targeted debugging: Check if media_group items have the expected fields
+      if (msg.media_group && msg.media_group.length > 0) {
+        const firstMedia = msg.media_group[0];
+        console.log('[MessageGallery] First media item in group:', {
+          messageId: firstMedia.telegram_message_id,
+          media_status: firstMedia.media_status,
+          media_key: firstMedia.media_key,
+          media_url: firstMedia.media_url,
+          allAvailableKeys: Object.keys(firstMedia),
+          // Check for alternative field names
+          r2_key: firstMedia.r2_key,
+          mediaKey: firstMedia.mediaKey,
+          r2Key: firstMedia.r2Key
+        });
+        
+        if (!firstMedia.media_key && !firstMedia.media_url) {
+          console.warn(`[MessageGallery] Missing media fields in group ${msg.grouped_id}. Available keys:`, Object.keys(firstMedia));
+        }
+      }
+      
       const completedCount = msg.media_group.filter(m => m.media_status === 'completed' && (m.media_key || m.media_url)).length;
       const totalCount = msg.media_group.length;
       
@@ -206,8 +226,22 @@ const MessageGallery = () => {
           messageId: msg.telegram_message_id,
           media_status: msg.media_status,
           media_key: msg.media_key,
-          media_url: msg.media_url
+          media_url: msg.media_url,
+          // Targeted debugging: Log all available keys if media fields are missing
+          allAvailableKeys: Object.keys(msg),
+          // Check for alternative field names that might contain the media key
+          r2_key: msg.r2_key,
+          mediaKey: msg.mediaKey,
+          r2Key: msg.r2Key,
+          file_key: msg.file_key,
+          fileKey: msg.fileKey
         });
+        
+        // If expected fields are missing, log all keys to find the correct one
+        if (!msg.media_key && !msg.media_url) {
+          console.warn(`[MessageGallery] Missing media fields for message ${msg.telegram_message_id}. Available keys:`, Object.keys(msg));
+          console.warn(`[MessageGallery] Full message object for debugging:`, msg);
+        }
         
         if (msg.media_key || msg.media_url) {
           return (
