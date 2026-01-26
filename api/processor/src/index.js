@@ -158,6 +158,18 @@ app.post('/process-media', async (c) => {
     
   } catch (error) {
     console.error('[Processor] Process media error:', error);
+    
+    // Check for FloodWaitError and return 429
+    if (error.message && error.message.includes('FloodWaitError')) {
+      const waitSeconds = error.message.match(/(\d+)s/) ? parseInt(error.message.match(/(\d+)s/)[1]) : 60;
+      console.error(`[Processor] FloodWaitError detected, returning 429 with wait time: ${waitSeconds}s`);
+      return c.json({ 
+        success: false, 
+        floodWait: waitSeconds,
+        error: `FloodWaitError: Need to wait ${waitSeconds} seconds` 
+      }, 429);
+    }
+    
     return c.json({ 
       success: false, 
       error: error.message 

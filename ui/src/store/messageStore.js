@@ -256,6 +256,10 @@ export const useMessageStore = create(
       const batchSize = 5; // Small, safe batch size
       const maxBatches = 200; // Safety limit
       
+      // Get current channel ID for targeted processing
+      const currentChannelId = useChannelStore.getState().selectedChannel?.id;
+      console.log(`[Phase B] Starting targeted processing for channel: ${currentChannelId}`);
+      
       // Client-side orchestration loop
       const processAllMedia = async () => {
         while (batchCount < maxBatches) {
@@ -267,7 +271,12 @@ export const useMessageStore = create(
           });
           
           try {
-            const response = await internalFetch(`${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}`, {
+            // Include chatId parameter for targeted processing
+            const url = currentChannelId 
+              ? `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${currentChannelId}`
+              : `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}`;
+              
+            const response = await internalFetch(url, {
               method: 'POST'
             });
             
@@ -278,6 +287,19 @@ export const useMessageStore = create(
                 error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
               });
               return false; // Stop processing
+            }
+            
+            // Handle 429 FloodWaitError
+            if (response.status === 429) {
+              const data = await response.json();
+              if (data.floodWait) {
+                console.log(`[Phase B] FloodWait detected, waiting ${data.floodWait}s`);
+                set({
+                  syncStatus: `Rate limited. Waiting ${data.floodWait} seconds...`
+                });
+                await new Promise(resolve => setTimeout(resolve, data.floodWait * 1000));
+                continue;
+              }
             }
             
             if (!response.ok) {
@@ -294,7 +316,10 @@ export const useMessageStore = create(
             if (!data.batchMode) {
               console.log('[Phase B] Fallback to single item mode');
               // Fallback to single item processing
-              const singleResponse = await internalFetch(`${PROCESSOR_URL}/process-media`, { method: 'POST' });
+              const singleUrl = currentChannelId 
+                ? `${PROCESSOR_URL}/process-media?chatId=${currentChannelId}`
+                : `${PROCESSOR_URL}/process-media`;
+              const singleResponse = await internalFetch(singleUrl, { method: 'POST' });
               if (!singleResponse.ok) {
                 throw new Error(`Single item fallback failed: ${singleResponse.status}`);
               }
@@ -325,6 +350,7 @@ export const useMessageStore = create(
             const updatedMessages = messages.map(msg => {
               const result = data.results?.find(r => r.messageId === msg.telegram_message_id);
               if (result && result.success && !result.skipped && result.mediaKey) {
+                console.log(`[Phase B] Live update: Message ${msg.telegram_message_id} completed`);
                 return {
                   ...msg,
                   media_status: 'completed',

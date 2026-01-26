@@ -50,8 +50,36 @@ export class ProcessorSyncService {
       // Connect to Telegram with robust initialization
       const client = await this.getClient();
       console.log(`[Processor] Initializing Telegram client connection...`);
-      await client.connect();
-      console.log(`[Processor] Telegram client connected successfully`);
+      
+      // Ensure client is properly connected with retry logic
+      let connectionAttempts = 0;
+      const maxConnectionAttempts = 3;
+      
+      while (connectionAttempts < maxConnectionAttempts) {
+        try {
+          await client.connect();
+          console.log(`[Processor] Telegram client connected successfully (attempt ${connectionAttempts + 1})`);
+          
+          // Verify connection by checking user info
+          const self = await client.getMe();
+          if (self) {
+            console.log(`[Processor] Connection verified - User: ${self.firstName || self.id}`);
+            break;
+          } else {
+            throw new Error('Connection verification failed');
+          }
+        } catch (connError) {
+          connectionAttempts++;
+          console.error(`[Processor] Connection attempt ${connectionAttempts} failed:`, connError.message);
+          
+          if (connectionAttempts >= maxConnectionAttempts) {
+            throw new Error(`Failed to establish Telegram connection after ${maxConnectionAttempts} attempts: ${connError.message}`);
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * connectionAttempts));
+        }
+      }
 
       // Get channel entity
       const channelBigInt = toBigInt(pendingMessage.chat_id);

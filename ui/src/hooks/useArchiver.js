@@ -217,7 +217,7 @@ export const useArchiver = () => {
 
           // Live UI updates - immediately update messages state
           if (data.results && data.results.length > 0) {
-            const { messages: currentMessages } = get();
+            const { messages: currentMessages } = useMessageStore.getState();
             const updatedMessages = currentMessages.map(msg => {
               const result = data.results.find(r => r.messageId === msg.telegram_message_id);
               if (result && result.success && !result.skipped && result.mediaKey) {
@@ -273,7 +273,7 @@ export const useArchiver = () => {
       isTriggeringRef.current = false;
       set({ isProcessing: false, isLoading: false });
     }
-  }, [isProcessing, isSyncing, get, set, internalFetch, PROCESSOR_URL, VIEWER_URL]);
+  }, [isProcessing, isSyncing, set, internalFetch, PROCESSOR_URL, VIEWER_URL]);
 
   // Hook lifecycle logging
   console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
