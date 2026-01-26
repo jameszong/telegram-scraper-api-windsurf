@@ -335,6 +335,7 @@ async function processBatchMedia(c, syncService, batchSize) {
     processedCount: processedCount,
     skippedCount: skippedCount,
     remaining: remainingCount.count,
+    hasMore: remainingCount.count > 0,
     results: results
   });
 }
