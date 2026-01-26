@@ -169,20 +169,23 @@ app.get('/messages', async (c) => {
         if (message.media_key) {
           return {
             ...message,
-            media_url: `${r2Url}/${message.media_key}`
+            media_url: `${r2Url}/${message.media_key}`,
+            // Ensure both fields are available for frontend compatibility
+            r2_key: message.media_key
           };
         }
-        // Explicitly set media_url to null for consistency
         return {
           ...message,
-          media_url: null
+          media_url: null,
+          r2_key: message.media_key || null
         };
       });
     } else if (messages.results && messages.results.length > 0) {
       // Ensure media_url field exists even if R2_PUBLIC_URL is not set
       messages.results = messages.results.map(message => ({
         ...message,
-        media_url: message.media_key ? null : null
+        media_url: message.media_key ? null : null,
+        r2_key: message.media_key || null
       }));
     }
     

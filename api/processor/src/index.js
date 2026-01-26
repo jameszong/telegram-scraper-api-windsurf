@@ -114,7 +114,8 @@ app.post('/process-media', async (c) => {
     
     // Step 1: Fetch pending task with retry logic
     const pendingMessage = await c.env.DB.prepare(`
-      SELECT * FROM messages 
+      SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
+      FROM messages 
       WHERE media_status = 'pending' 
       OR media_status = 'failed'
       ORDER BY 
@@ -128,6 +129,15 @@ app.post('/process-media', async (c) => {
     }
 
     console.log(`[Processor] Processing media for message ${pendingMessage.telegram_message_id}, type: ${pendingMessage.media_type}, status: ${pendingMessage.media_status}`);
+    console.log(`[Processor] Pending message details:`, {
+      id: pendingMessage.id,
+      telegram_message_id: pendingMessage.telegram_message_id,
+      chat_id: pendingMessage.chat_id,
+      media_status: pendingMessage.media_status,
+      media_key: pendingMessage.media_key,
+      telegram_message_id_type: typeof pendingMessage.telegram_message_id,
+      chat_id_type: typeof pendingMessage.chat_id
+    });
 
     // Step 2: Process the media
     const result = await syncService.processMediaMessage(pendingMessage);

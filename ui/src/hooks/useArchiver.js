@@ -57,14 +57,22 @@ const groupMessages = (messages) => {
       groupSize: groupMsgs.length,
       text: masterMessage.text || '',
       originalMessageId: masterMessage.telegram_message_id,
-      hasText: !!(masterMessage.text && masterMessage.text.trim())
+      hasText: !!(masterMessage.text && masterMessage.text.trim()),
+      // CRITICAL: Propagate media status and keys from all group members
+      media_status: masterMessage.media_status || 'none',
+      media_key: masterMessage.media_key || null,
+      r2_key: masterMessage.r2_key || masterMessage.media_key || null,
+      media_url: masterMessage.media_url || null
     };
     
     console.log(`[useArchiver] Created group ${groupId} with Master Message:`, {
       masterMessageId: masterMessage.telegram_message_id,
       hasText: groupObject.hasText,
       text: groupObject.text,
-      groupSize: groupObject.groupSize
+      groupSize: groupObject.groupSize,
+      media_status: groupObject.media_status,
+      media_key: groupObject.media_key,
+      r2_key: groupObject.r2_key
     });
     
     result.push(groupObject);
