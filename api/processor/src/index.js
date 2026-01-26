@@ -37,15 +37,29 @@ app.use('/*', async (c, next) => {
   
   // Check internal key first (for microservice communication)
   if (internalKey) {
-    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY;
-    if (!INTERNAL_SERVICE_KEY) {
+    const expectedKeyRaw = c.env.INTERNAL_SERVICE_KEY;
+    const expectedKey = (expectedKeyRaw || '').trim();
+    const receivedKey = (internalKey || '').trim();
+
+    // Temporary debug to diagnose whitespace / desync issues
+    console.log('[Processor Auth] DEBUG - Comparing internal keys:', {
+      receivedLength: internalKey?.length,
+      expectedLength: expectedKeyRaw?.length,
+      receivedTrimmedLength: receivedKey.length,
+      expectedTrimmedLength: expectedKey.length,
+      match: receivedKey === expectedKey,
+    });
+
+    if (!expectedKey) {
       console.error('[Processor Auth] INTERNAL_SERVICE_KEY not configured');
       return c.json({ error: 'Service configuration error' }, 500);
     }
-    if (internalKey !== INTERNAL_SERVICE_KEY) {
+
+    if (receivedKey !== expectedKey) {
       console.error('[Processor Auth] Invalid internal key provided');
       return c.json({ error: 'Invalid internal key' }, 401);
     }
+
     console.log('[Processor Auth] Internal key validated successfully');
     await next();
     return;
