@@ -217,10 +217,10 @@ export class ProcessorSyncService {
       console.log(`[Processor] Successfully downloaded media (${buffer.length} bytes)`);
 
       // Generate R2 key
-      const chatIdStr = String(targetChannelId);
+      const r2ChatIdStr = String(targetChannelId);
       const messageIdStr = message.id.toString();
       const extension = this.getMediaExtension(message.media.className);
-      const key = `media/${chatIdStr}_${messageIdStr}_${Date.now()}.${extension}`;
+      const key = `media/${r2ChatIdStr}_${messageIdStr}_${Date.now()}.${extension}`;
 
       console.log(`[Processor] Uploading to R2: ${key}`);
 
@@ -245,37 +245,65 @@ export class ProcessorSyncService {
       console.log(`[Processor] Updating DB for message ${pendingMessage.telegram_message_id} with key: ${key}`);
 
       // CRITICAL: Use telegram_message_id AND chat_id as unique key to match Scanner's storage format
-      const msgId = String(pendingMessage.telegram_message_id);
-      const chatId = String(pendingMessage.chat_id);
+      const msgIdStr = String(pendingMessage.telegram_message_id);
+      const chatIdStr = String(pendingMessage.chat_id);
 
       console.log(`[Processor] DB Update Parameters:`, {
         mediaKey: key,
-        telegramMessageId: msgId,
-        chatId: chatId,
-        telegramMessageIdType: typeof msgId,
-        chatIdType: typeof chatId
+        telegramMessageId: msgIdStr,
+        chatId: chatIdStr,
+        telegramMessageIdType: typeof msgIdStr,
+        chatIdType: typeof chatIdStr,
+        originalMessageId: pendingMessage.telegram_message_id,
+        originalChatId: pendingMessage.chat_id
       });
+      
+      // PRE-UPDATE VERIFICATION: Check if message exists before updating
+      const preCheckResult = await this.env.DB.prepare(`
+        SELECT id, telegram_message_id, chat_id, media_status, media_key FROM messages
+        WHERE telegram_message_id = ? AND chat_id = ?
+      `).bind(msgIdStr, chatIdStr).first();
+      
+      if (!preCheckResult) {
+        console.error(`[Processor] PRE-CHECK FAILED: Message NOT FOUND before update`);
+        console.error(`[Processor] Search params: telegram_message_id=${msgIdStr}, chat_id=${chatIdStr}`);
+        
+        // Try alternative query to find the message
+        const altCheck = await this.env.DB.prepare(`
+          SELECT id, telegram_message_id, chat_id, media_status FROM messages
+          WHERE id = ?
+        `).bind(String(pendingMessage.id)).first();
+        
+        if (altCheck) {
+          console.error(`[Processor] Found message by ID but composite key mismatch:`, altCheck);
+        }
+        
+        throw new Error(`Message not found in DB before update. telegram_message_id=${msgIdStr}, chat_id=${chatIdStr}`);
+      }
+      
+      console.log(`[Processor] PRE-CHECK PASSED: Message found:`, preCheckResult);
 
       const result = await this.env.DB.prepare(`
         UPDATE messages 
         SET media_status = 'completed', media_key = ? 
         WHERE telegram_message_id = ? AND chat_id = ?
-      `).bind(key, msgId, chatId).run();
+      `).bind(key, msgIdStr, chatIdStr).run();
 
-      console.log(`[Processor] DB Update for ${msgId}: changes=${result.meta.changes}`);
-      console.log(`[DB] Message ${msgId} updated, changes: ${result.meta.changes}`);
+      console.log(`[Persistence] Updated Msg ${msgIdStr}: changes=${result.meta.changes}`);
+      console.log(`[DB] Message ${msgIdStr} updated, changes: ${result.meta.changes}`);
 
       // CRITICAL: If changes === 0, throw explicit error to stop 'false success' loop
       if (result.meta.changes === 0) {
-        const errorMsg = `CRITICAL: DB UPDATE FAILED - No rows affected for message ${msgId} in chat ${chatId}. This indicates a data mismatch or the message doesn't exist.`;
+        console.warn(`[Persistence Warning] Uploaded but DB row not found! Check ID types.`);
+        const errorMsg = `CRITICAL: DB UPDATE FAILED - No rows affected for message ${msgIdStr} in chat ${chatIdStr}. This indicates a data mismatch or the message doesn't exist.`;
         console.error(`[Processor] ${errorMsg}`);
-        console.error(`[Processor] Query parameters: mediaKey=${key}, telegram_message_id=${msgId}, chat_id=${chatId}`);
+        console.error(`[Processor] Query parameters: mediaKey=${key}, telegram_message_id=${msgIdStr}, chat_id=${chatIdStr}`);
 
         // Check if message exists at all
         const checkResult = await this.env.DB.prepare(`
           SELECT id, telegram_message_id, chat_id, media_status FROM messages
           WHERE telegram_message_id = ? AND chat_id = ?
-        `).bind(msgId, chatId).first();
+        `).bind(msgIdStr, chatIdStr).first();
 
         if (checkResult) {
           console.error(`[Processor] Message exists but update failed. Current state:`, checkResult);
@@ -286,7 +314,7 @@ export class ProcessorSyncService {
         throw new Error(errorMsg);
       }
 
-      console.log(`[Processor] SUCCESS: DB updated for message ${msgId}, ${result.meta.changes} rows affected`);
+      console.log(`[Processor] SUCCESS: DB updated for message ${msgIdStr}, ${result.meta.changes} rows affected`);
 
       // Also save to media table for compatibility
       const mediaData = {

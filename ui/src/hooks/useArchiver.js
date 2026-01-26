@@ -335,10 +335,10 @@ export const useArchiver = () => {
   useEffect(() => {
     if (isProcessing) {
       const staleTimer = setTimeout(() => {
-        console.warn('[useArchiver] isProcessing stuck for 30s, forcing reset');
+        console.warn('[useArchiver] isProcessing stuck for 60s, forcing reset');
         const { setProcessing } = useMessageStore.getState();
         setProcessing(false);
-      }, 30000);
+      }, 60000); // 增加到 60 秒以适应较慢的 R2 上传
 
       return () => clearTimeout(staleTimer);
     }

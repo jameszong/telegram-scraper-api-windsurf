@@ -250,7 +250,10 @@ const MessageGallery = () => {
         });
         
         if (!firstMedia.media_key && !firstMedia.media_url) {
-          console.warn(`[MessageGallery] Missing media fields in group ${msg.grouped_id}. Available keys:`, Object.keys(firstMedia));
+          // 只在非 pending 状态时警告，因为 pending 状态下缺少 media_key 是正常的
+          if (firstMedia.media_status !== 'pending') {
+            console.warn(`[MessageGallery] Missing media fields in group ${msg.grouped_id}. Available keys:`, Object.keys(firstMedia));
+          }
         }
       }
       
@@ -307,8 +310,11 @@ const MessageGallery = () => {
         const fileKey = msg.media_key || msg.r2_key || msg.media?.r2_key || msg.media?.media_key;
         
         if (!fileKey && !msg.media_url) {
-          console.warn(`[MessageGallery] Missing media fields for message ${msg.telegram_message_id}. Available keys:`, Object.keys(msg));
-          console.warn(`[MessageGallery] Full message object for debugging:`, msg);
+          // 只在非 pending 状态时警告，因为 pending 状态下缺少 media_key 是正常的
+          if (msg.media_status !== 'pending') {
+            console.warn(`[MessageGallery] Missing media fields for message ${msg.telegram_message_id}. Available keys:`, Object.keys(msg));
+            console.warn(`[MessageGallery] Full message object for debugging:`, msg);
+          }
         }
         
         if (fileKey || msg.media_url) {
