@@ -63,8 +63,8 @@ const ImageGalleryModal = ({ isOpen, onClose, images, initialIndex = 0 }) => {
 
   const currentImage = images[currentIndex];
   
-  // Defensive field mapping: handle flat or nested keys
-  const r2Key = currentImage.r2_key || currentImage.media?.r2_key || currentImage.media_key;
+  // Defensive field mapping: handle flat or nested keys with consistent priority
+  const r2Key = currentImage.media_key || currentImage.r2_key || currentImage.media?.r2_key || currentImage.media?.media_key;
   
   console.log('[ImageGalleryModal] Current image field mapping:', {
     imageIndex: currentIndex,
