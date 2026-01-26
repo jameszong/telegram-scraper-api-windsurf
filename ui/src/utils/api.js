@@ -46,9 +46,16 @@ export const createInternalFetch = () => {
       }
     });
     
+    // 创建带超时的 AbortController，增加到 60 秒
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 秒超时
+    
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: controller.signal,
+    }).finally(() => {
+      clearTimeout(timeoutId);
     });
     
     console.log(`[Internal Fetch] Response ${options.method || 'GET'} ${url}`, {

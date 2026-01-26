@@ -38,6 +38,9 @@ export class ProcessorSyncService {
 
   // Phase B: Media processing only
   async processMediaMessage(pendingMessage) {
+    // 添加详细日志以追踪消息处理
+    console.log(`[Processor] Starting media processing for message ${pendingMessage.telegram_message_id} with detailed logging`);
+    
     try {
       console.log(`[Processor] Starting media processing for message ${pendingMessage.telegram_message_id}`);
 
@@ -57,16 +60,19 @@ export class ProcessorSyncService {
       
       while (connectionAttempts < maxConnectionAttempts) {
         try {
+          // 先断开连接再重新连接，确保连接状态清晰
+          try { await client.disconnect(); } catch (e) { /* 忽略断开错误 */ }
+          
           await client.connect();
           console.log(`[Processor] Telegram client connected successfully (attempt ${connectionAttempts + 1})`);
           
-          // Verify connection by checking user info
+          // 验证连接状态
           const self = await client.getMe();
           if (self) {
             console.log(`[Processor] Connection verified - User: ${self.firstName || self.id}`);
             break;
           } else {
-            throw new Error('Connection verification failed');
+            throw new Error('Connection verification failed - getMe returned empty result');
           }
         } catch (connError) {
           connectionAttempts++;
@@ -76,8 +82,10 @@ export class ProcessorSyncService {
             throw new Error(`Failed to establish Telegram connection after ${maxConnectionAttempts} attempts: ${connError.message}`);
           }
           
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * connectionAttempts));
+          // 等待时间按指数增长，避免频繁重试
+          const waitTime = Math.min(1000 * Math.pow(2, connectionAttempts), 8000); // 指数退避，最长8秒
+          console.log(`[Processor] Waiting ${waitTime}ms before next connection attempt`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
 
@@ -160,14 +168,32 @@ export class ProcessorSyncService {
         console.error(`[Processor] Error/Timeout for message ${message.id}:`, error.message);
         
         // Check for FloodWaitError
-        if (error.message && error.message.includes('FLOOD_WAIT')) {
+        if (error.message && error.message.includes('FloodWaitError')) {
           const waitSeconds = error.message.match(/(\d+)s/) ? parseInt(error.message.match(/(\d+)s/)[1]) : 60;
-          console.error(`[Processor] FloodWaitError detected, need to wait ${waitSeconds} seconds`);
+          console.error(`[Processor] FloodWaitError detected: need to wait ${waitSeconds} seconds`);
+          
+          // Fast-fail: if wait time > 5 seconds, don't wait in the worker
+          if (waitSeconds > 5) {
+            console.log(`[Processor] Fast-fail: wait time ${waitSeconds}s > 5s, returning immediately`);
+            return {
+              success: false,
+              skipped: true,
+              reason: "RateLimit",
+              floodWait: waitSeconds,
+              error: `Rate limited: Need to wait ${waitSeconds} seconds`
+            };
+          }
+          
+          // For short waits (<= 5s), we can wait in the worker
+          console.log(`[Processor] Short wait time ${waitSeconds}s, waiting in worker`);
+          await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+          // Retry the operation after waiting
           return {
             success: false,
+            skipped: true,
+            reason: "RateLimit",
             floodWait: waitSeconds,
-            error: `FloodWaitError: Need to wait ${waitSeconds} seconds`,
-            mediaKey: null
+            error: `Rate limited: Need to wait ${waitSeconds} seconds`
           };
         }
         

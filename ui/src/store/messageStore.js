@@ -253,8 +253,10 @@ export const useMessageStore = create(
       
       let processedCount = 0;
       let batchCount = 0;
-      const batchSize = 5; // Small, safe batch size
+      const batchSize = 1; // 激进减小批处理大小，确保在 30 秒限制内完成
       const maxBatches = 200; // Safety limit
+      let retryCount = 0;
+      const maxRetries = 3; // 最多重试3次
       
       // Get current channel ID for targeted processing
       const currentChannelId = useChannelStore.getState().selectedChannel?.id;
@@ -275,10 +277,14 @@ export const useMessageStore = create(
             const url = currentChannelId 
               ? `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${currentChannelId}`
               : `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}`;
-              
+            
+            console.log(`[Phase B] Requesting batch ${batchCount} with retry ${retryCount}/${maxRetries}`);
             const response = await internalFetch(url, {
               method: 'POST'
             });
+            
+            // 成功请求后重置重试计数
+            retryCount = 0;
             
             if (response.status === 401) {
               console.error('[Phase B] HTTP 401 Unauthorized - Credential error detected');
@@ -389,11 +395,65 @@ export const useMessageStore = create(
             
           } catch (error) {
             console.error(`[Phase B] Batch ${batchCount} error:`, error);
+            
+            // 特殊处理超时错误
+            if (error.name === 'AbortError' || error.message.includes('timeout')) {
+              console.log(`[Phase B] Timeout detected, reducing batch size and retrying`);
+              
+              // 动态减小批处理大小（如果当前大小 > 1）
+              if (batchSize > 1) {
+                console.log(`[Phase B] Reducing batch size from ${batchSize} to 1`);
+                // 这里我们不能直接修改 const，但可以记录并建议用户刷新
+                set({
+                  syncStatus: `Timeout detected. Please refresh the page to continue with smaller batch size.`,
+                  error: 'Request timeout. Please refresh the page.'
+                });
+                return false;
+              }
+              
+              retryCount++;
+              if (retryCount <= maxRetries) {
+                const waitTime = 2000; // 超时后等待 2 秒
+                console.log(`[Phase B] Timeout retry (${retryCount}/${maxRetries}) after ${waitTime}ms`);
+                
+                set({
+                  syncStatus: `Timeout, retrying (${retryCount}/${maxRetries})...`
+                });
+                
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                batchCount--; // 重置批次计数器以重试当前批次
+                continue;
+              }
+            }
+            
+            // 如果是网络错误，尝试重试
+            if (error.message.includes('Failed to fetch') || 
+                error.message.includes('ERR_CONNECTION') || 
+                error.message.includes('NetworkError')) {
+              
+              retryCount++;
+              
+              if (retryCount <= maxRetries) {
+                const waitTime = retryCount * 1000; // 逐次增加等待时间
+                console.log(`[Phase B] Network error, retrying (${retryCount}/${maxRetries}) after ${waitTime}ms`);
+                
+                set({
+                  syncStatus: `Network error, retrying (${retryCount}/${maxRetries})...`
+                });
+                
+                // 等待后重试当前批次
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                batchCount--; // 重置批次计数器以重试当前批次
+                continue;
+              }
+            }
+            
+            // 重试次数超过或非网络错误，停止处理
             set({
               syncStatus: `Error: Batch ${batchCount} failed - ${error.message}`,
               error: error.message
             });
-            return false; // Stop processing on error
+            return false; // 停止处理
           }
         }
         

@@ -121,9 +121,27 @@ app.get('/health', (c) => {
 
 // Phase B: Media processing only
 app.post('/process-media', async (c) => {
-  const syncService = c.get('syncService');
+  // 顺序处理标记，防止并发请求
+  const processingKey = 'processing_' + (c.req.query('chatId') || 'all');
   
+  // 检查是否有并发请求
+  if (c.env.PROCESSING_LOCK && c.env.PROCESSING_LOCK[processingKey]) {
+    console.log(`[Processor] Concurrent request detected for ${processingKey}, returning 429`);
+    return c.json({
+      success: false,
+      error: 'Another request is already processing. Please wait.',
+      concurrent: true
+    }, 429);
+  }
+  
+  // 设置处理锁
+  if (!c.env.PROCESSING_LOCK) c.env.PROCESSING_LOCK = {};
+  c.env.PROCESSING_LOCK[processingKey] = true;
+  
+  // 全局错误处理
   try {
+    const syncService = c.get('syncService');
+    
     // CRITICAL: Validate credentials exist before processing
     console.log('[Processor] Validating credentials...');
     try {
@@ -174,6 +192,12 @@ app.post('/process-media', async (c) => {
       success: false, 
       error: error.message 
     }, 500);
+  } finally {
+    // 释放处理锁，无论成功或失败
+    if (c.env.PROCESSING_LOCK) {
+      c.env.PROCESSING_LOCK[processingKey] = false;
+      console.log(`[Processor] Released processing lock for ${processingKey}`);
+    }
   }
 });
 
@@ -381,6 +405,10 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
   }
   
   const remainingCount = await c.env.DB.prepare(remainingQuery).bind(...remainingParams).first();
+  
+  // 添加详细日志以追踪剩余项
+  console.log(`[Processor] Remaining count query: ${remainingQuery} with params:`, remainingParams);
+  console.log(`[Processor] Remaining count result:`, remainingCount);
 
   console.log(`[Processor Batch] Completed: ${processedCount} processed, ${skippedCount} skipped, ${remainingCount.count} remaining`);
   
