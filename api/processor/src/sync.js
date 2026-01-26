@@ -248,15 +248,7 @@ export class ProcessorSyncService {
       const msgIdStr = String(pendingMessage.telegram_message_id);
       const chatIdStr = String(pendingMessage.chat_id);
 
-      console.log(`[Processor] DB Update Parameters:`, {
-        mediaKey: key,
-        telegramMessageId: msgIdStr,
-        chatId: chatIdStr,
-        telegramMessageIdType: typeof msgIdStr,
-        chatIdType: typeof chatIdStr,
-        originalMessageId: pendingMessage.telegram_message_id,
-        originalChatId: pendingMessage.chat_id
-      });
+      console.log(`[Processor] DB Update Parameters: mediaKey=${key}, telegramMessageId=${msgIdStr} (${typeof msgIdStr}), chatId=${chatIdStr} (${typeof chatIdStr}), originalMessageId=${pendingMessage.telegram_message_id}, originalChatId=${pendingMessage.chat_id}`);
       
       // PRE-UPDATE VERIFICATION: Check if message exists before updating
       const preCheckResult = await this.env.DB.prepare(`
@@ -275,13 +267,13 @@ export class ProcessorSyncService {
         `).bind(String(pendingMessage.id)).first();
         
         if (altCheck) {
-          console.error(`[Processor] Found message by ID but composite key mismatch:`, altCheck);
+          console.error(`[Processor] Found message by ID but composite key mismatch: id=${altCheck.id}, telegram_message_id=${altCheck.telegram_message_id}, chat_id=${altCheck.chat_id}`);
         }
         
         throw new Error(`Message not found in DB before update. telegram_message_id=${msgIdStr}, chat_id=${chatIdStr}`);
       }
       
-      console.log(`[Processor] PRE-CHECK PASSED: Message found:`, preCheckResult);
+      console.log(`[Processor] PRE-CHECK PASSED: Message found: id=${preCheckResult.id}, telegram_message_id=${preCheckResult.telegram_message_id}, chat_id=${preCheckResult.chat_id}, media_status=${preCheckResult.media_status}`);
 
       const result = await this.env.DB.prepare(`
         UPDATE messages 
@@ -306,7 +298,7 @@ export class ProcessorSyncService {
         `).bind(msgIdStr, chatIdStr).first();
 
         if (checkResult) {
-          console.error(`[Processor] Message exists but update failed. Current state:`, checkResult);
+          console.error(`[Processor] Message exists but update failed. Current state: id=${checkResult.id}, telegram_message_id=${checkResult.telegram_message_id}, chat_id=${checkResult.chat_id}, media_status=${checkResult.media_status}, media_key=${checkResult.media_key}`);
         } else {
           console.error(`[Processor] Message NOT FOUND in database with these parameters`);
         }
