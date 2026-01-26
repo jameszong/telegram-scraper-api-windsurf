@@ -83,6 +83,7 @@ Thumbs.db
 # Logs
 logs
 *.log
+test log/
 
 # Temporary folders
 tmp/

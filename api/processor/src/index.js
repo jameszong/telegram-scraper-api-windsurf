@@ -141,7 +141,10 @@ app.post('/process-media', async (c) => {
     
     // Check for batch processing parameter
     const batchMode = c.req.query('batch') === 'true';
-    const batchSize = parseInt(c.req.query('size') || '10');
+    const requestedBatchSize = parseInt(c.req.query('size') || '10');
+    const batchSize = Number.isFinite(requestedBatchSize)
+      ? Math.max(1, Math.min(requestedBatchSize, 10))
+      : 10;
     
     if (batchMode) {
       return await processBatchMedia(c, syncService, batchSize);
