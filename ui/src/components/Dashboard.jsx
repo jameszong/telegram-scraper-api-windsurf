@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useChannelStore } from '../store/channelStore';
 import { useMessageStore } from '../store/messageStore';
+import { useArchiver } from '../hooks/useArchiver';
 import { ChannelSelector } from './ChannelSelector';
 import MessageGallery from './MessageGallery';
 import { Button } from './ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
-import { LogOut, RefreshCw, Loader2, Hash, Archive } from 'lucide-react';
+import { LogOut, RefreshCw, Loader2, Hash, Archive, Image } from 'lucide-react';
 
 export const Dashboard = () => {
   const { logout, isLoggedIn } = useAuthStore();
@@ -26,6 +27,11 @@ export const Dashboard = () => {
     isLoading: messagesLoading 
   } = useMessageStore();
   
+  const { 
+    phaseBMediaProcessing,
+    isProcessing 
+  } = useArchiver();
+  
   const [activeTab, setActiveTab] = useState('channels');
   
   useEffect(() => {
@@ -35,25 +41,27 @@ export const Dashboard = () => {
   }, [isLoggedIn, fetchChannels]);
   
   useEffect(() => {
-    if (channels.length > 0) {
-      // Initialize selected channel from localStorage after channels are loaded
-      initializeFromStorage();
-    }
+    initializeFromStorage();
   }, [channels, initializeFromStorage]);
-  
+
+  // CRITICAL: Trigger fetchMessages when switching to Archive tab
   useEffect(() => {
-    if (selectedChannel) {
-      console.log('Debug: Channel switched to:', selectedChannel.id, selectedChannel.title);
+    if (activeTab === 'archive' && selectedChannel) {
+      console.log('[Dashboard] Switched to Archive tab, fetching messages for channel:', selectedChannel.id);
       fetchMessages(50, true, selectedChannel.id);
     }
-  }, [selectedChannel?.id, fetchMessages]); // Use selectedChannel?.id for better reactivity
+  }, [activeTab, selectedChannel, fetchMessages]);
   
   const handleSync = async () => {
     if (!selectedChannel) return;
     
-    const result = await syncMessages();
-    if (result.success) {
-      // Messages will be automatically refreshed after sync
+    try {
+      const result = await syncMessages();
+      if (result && result.success) {
+        // Messages will be automatically refreshed after sync
+      }
+    } catch (error) {
+      console.error('[Dashboard] Sync failed:', error);
     }
   };
   
@@ -94,6 +102,24 @@ export const Dashboard = () => {
                       <>
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Sync Now
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={phaseBMediaProcessing} 
+                    disabled={isProcessing}
+                    variant="default"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Image className="w-4 h-4 mr-2" />
+                        Process Images
                       </>
                     )}
                   </Button>

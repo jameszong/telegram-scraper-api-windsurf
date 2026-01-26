@@ -31,7 +31,18 @@ export const useChannelStore = create(
     
     try {
       const response = await authenticatedFetch(`${API_BASE}/channels`);
+      
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         set({ 
@@ -64,7 +75,17 @@ export const useChannelStore = create(
         body: JSON.stringify({ channelId })
       });
       
+      // Check if response exists and is ok
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response?.status || 'unknown'}: ${response?.statusText || 'Network error'}`);
+      }
+      
       const data = await response.json();
+      
+      // Check if data exists and has success property
+      if (!data || typeof data.success === 'undefined') {
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.success) {
         const { channels } = get();
@@ -92,13 +113,24 @@ export const useChannelStore = create(
   
   // Initialize selected channel from localStorage
   initializeFromStorage: () => {
+    console.log('[ChannelStore] initializeFromStorage called');
     const lastChannelId = localStorage.getItem('lastChannelId');
+    console.log('[ChannelStore] Last channelId from localStorage:', lastChannelId);
+    
     if (lastChannelId) {
       const { channels } = get();
+      console.log('[ChannelStore] Available channels:', channels.length);
       const selected = channels.find(ch => ch.id === lastChannelId);
+      console.log('[ChannelStore] Found selected channel:', selected ? selected.title : 'Not found');
+      
       if (selected) {
         set({ selectedChannel: selected });
+        console.log('[ChannelStore] Selected channel restored:', selected.id, selected.title);
+      } else {
+        console.warn('[ChannelStore] Last channel not found in available channels');
       }
+    } else {
+      console.log('[ChannelStore] No last channel ID in localStorage');
     }
   }
 }),

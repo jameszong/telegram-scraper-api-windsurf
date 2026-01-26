@@ -41,7 +41,11 @@ app.use('/*', async (c, next) => {
   
   // Check internal key first (for microservice communication)
   if (internalKey) {
-    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY || 'telegram-archiver-internal-2024';
+    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY;
+    if (!INTERNAL_SERVICE_KEY) {
+      console.error('[Viewer Auth] INTERNAL_SERVICE_KEY not configured');
+      return c.json({ error: 'Service configuration error' }, 500);
+    }
     if (internalKey !== INTERNAL_SERVICE_KEY) {
       console.error('[Viewer Auth] Invalid internal key provided');
       return c.json({ error: 'Invalid internal key' }, 401);
@@ -145,7 +149,8 @@ app.get('/messages', async (c) => {
     // Fetch messages with media info
     const messages = await c.env.DB.prepare(`
       SELECT m.id, m.telegram_message_id, m.chat_id, m.text, m.date, m.created_at, m.grouped_id,
-             m.media_status, m.media_type, m.media_key
+             m.media_status, m.media_type, m.media_key,
+             m.media_key as r2_key  -- Add alias for frontend compatibility
       FROM messages m
       WHERE m.chat_id = ?
       ORDER BY m.date DESC
@@ -164,25 +169,47 @@ app.get('/messages', async (c) => {
         if (message.media_key) {
           return {
             ...message,
-            media_url: `${r2Url}/${message.media_key}`
+            media_url: `${r2Url}/${message.media_key}`,
+            // Ensure both fields are available for frontend compatibility
+            r2_key: message.media_key
           };
         }
-        // Explicitly set media_url to null for consistency
         return {
           ...message,
-          media_url: null
+          media_url: null,
+          r2_key: message.media_key || null
         };
       });
     } else if (messages.results && messages.results.length > 0) {
       // Ensure media_url field exists even if R2_PUBLIC_URL is not set
       messages.results = messages.results.map(message => ({
         ...message,
-        media_url: message.media_key ? null : null
+        media_url: message.media_key ? null : null,
+        r2_key: message.media_key || null
       }));
     }
     
     // Debug: Log fetched data structure
     console.log(`[Viewer] Fetched ${messages.results?.length || 0} messages from DB for channel ${channelId}`);
+    
+    // Enhanced debugging: Log first message media info to identify field names
+    if (messages.results && messages.results.length > 0) {
+      const firstMessage = messages.results[0];
+      console.log("[Viewer] First message media info:", {
+        telegram_message_id: firstMessage.telegram_message_id,
+        media_status: firstMessage.media_status,
+        media_type: firstMessage.media_type,
+        media_key: firstMessage.media_key,
+        media_url: firstMessage.media_url,
+        grouped_id: firstMessage.grouped_id,
+        allKeys: Object.keys(firstMessage)
+      });
+      
+      // Log if media_key exists but media_url is missing
+      if (firstMessage.media_key && !firstMessage.media_url) {
+        console.warn("[Viewer] media_key exists but media_url is null - R2_PUBLIC_URL may not be configured");
+      }
+    }
     
     // CRITICAL FIX: Return pagination data
     const page = Math.floor(offset / limit) + 1;

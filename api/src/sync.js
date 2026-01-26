@@ -183,6 +183,9 @@ export class SyncService {
             media_type: null // Default type
           };
 
+          // Debug: Log groupedId extraction
+          console.log("[Scanner] Message ID:", message.id, "Grouped ID:", message.groupedId?.toString(), "Type:", typeof message.groupedId);
+
           // Handle media status tracking (NO DOWNLOADING in sync route)
           if (message.media && message.media.className !== 'MessageMediaWebPage') {
             console.log(`Debug: Found media type ${message.media.className} for message ${message.id}, setting status to pending`);
@@ -224,17 +227,22 @@ export class SyncService {
       console.log(`Debug: Successfully synced ${syncedCount} messages with ${mediaCount} media files`);
 
       // Return processed messages for immediate frontend update
-      const processedMessages = messages.map(msg => ({
-        id: msg.id,
-        telegram_message_id: msg.id.toString(),
-        chat_id: String(targetChannelId),
-        text: msg.text || '',
-        date: new Date(Number(msg.date) * 1000).toISOString(),
-        grouped_id: msg.groupedId ? msg.groupedId.toString() : null,
-        media_status: msg.media ? 'pending' : 'none',
-        media_type: msg.media ? msg.media.className : null,
-        media_url: null // Will be populated in Phase B
-      }));
+      const processedMessages = messages.map(msg => {
+        // Debug: Log groupedId extraction for backfill
+        console.log("[Scanner] Backfill Message ID:", msg.id, "Grouped ID:", msg.groupedId?.toString(), "Type:", typeof msg.groupedId);
+        
+        return {
+          id: msg.id,
+          telegram_message_id: msg.id.toString(),
+          chat_id: String(targetChannelId),
+          text: msg.text || '',
+          date: new Date(Number(msg.date) * 1000).toISOString(),
+          grouped_id: msg.groupedId ? msg.groupedId.toString() : null,
+          media_status: msg.media ? 'pending' : 'none',
+          media_type: msg.media ? msg.media.className : null,
+          media_url: null // Will be populated in Phase B
+        };
+      });
 
       return {
         success: true,

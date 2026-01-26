@@ -174,9 +174,50 @@ export class ProcessorSyncService {
       }
 
       // Update database with media key and completed status
-      await this.env.DB.prepare(`
-        UPDATE messages SET media_key = ?, media_status = 'completed' WHERE id = ?
-      `).bind(key, String(pendingMessage.id)).run();
+      console.log(`[Processor] Updating DB for message ${pendingMessage.telegram_message_id} with key: ${key}`);
+
+      // CRITICAL: Use telegram_message_id AND chat_id as unique key to match Scanner's storage format
+      const msgId = String(pendingMessage.telegram_message_id);
+      const chatId = String(pendingMessage.chat_id);
+
+      console.log(`[Processor] DB Update Parameters:`, {
+        mediaKey: key,
+        telegramMessageId: msgId,
+        chatId: chatId,
+        telegramMessageIdType: typeof msgId,
+        chatIdType: typeof chatId
+      });
+
+      const result = await this.env.DB.prepare(`
+        UPDATE messages 
+        SET media_status = 'completed', media_key = ? 
+        WHERE telegram_message_id = ? AND chat_id = ?
+      `).bind(key, msgId, chatId).run();
+
+      console.log(`[Processor] DB Update for ${msgId}: changes=${result.meta.changes}`);
+
+      // CRITICAL: If changes === 0, throw explicit error to stop 'false success' loop
+      if (result.meta.changes === 0) {
+        const errorMsg = `CRITICAL: DB UPDATE FAILED - No rows affected for message ${msgId} in chat ${chatId}. This indicates a data mismatch or the message doesn't exist.`;
+        console.error(`[Processor] ${errorMsg}`);
+        console.error(`[Processor] Query parameters: mediaKey=${key}, telegram_message_id=${msgId}, chat_id=${chatId}`);
+
+        // Check if message exists at all
+        const checkResult = await this.env.DB.prepare(`
+          SELECT id, telegram_message_id, chat_id, media_status FROM messages
+          WHERE telegram_message_id = ? AND chat_id = ?
+        `).bind(msgId, chatId).first();
+
+        if (checkResult) {
+          console.error(`[Processor] Message exists but update failed. Current state:`, checkResult);
+        } else {
+          console.error(`[Processor] Message NOT FOUND in database with these parameters`);
+        }
+
+        throw new Error(errorMsg);
+      }
+
+      console.log(`[Processor] SUCCESS: DB updated for message ${msgId}, ${result.meta.changes} rows affected`);
 
       // Also save to media table for compatibility
       const mediaData = {
@@ -187,7 +228,7 @@ export class ProcessorSyncService {
         r2_key: key
       };
 
-      await this.saveMediaRecord(String(pendingMessage.id), mediaData);
+      await this.saveMediaRecord(pendingMessage.id, mediaData);
 
       // Free memory
       buffer = null;

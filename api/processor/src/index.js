@@ -37,11 +37,29 @@ app.use('/*', async (c, next) => {
   
   // Check internal key first (for microservice communication)
   if (internalKey) {
-    const INTERNAL_SERVICE_KEY = c.env.INTERNAL_SERVICE_KEY || 'telegram-archiver-internal-2024';
-    if (internalKey !== INTERNAL_SERVICE_KEY) {
+    const expectedKeyRaw = c.env.INTERNAL_SERVICE_KEY;
+    const expectedKey = (expectedKeyRaw || '').trim();
+    const receivedKey = (internalKey || '').trim();
+
+    // Temporary debug to diagnose whitespace / desync issues
+    console.log('[Processor Auth] DEBUG - Comparing internal keys:', {
+      receivedLength: internalKey?.length,
+      expectedLength: expectedKeyRaw?.length,
+      receivedTrimmedLength: receivedKey.length,
+      expectedTrimmedLength: expectedKey.length,
+      match: receivedKey === expectedKey,
+    });
+
+    if (!expectedKey) {
+      console.error('[Processor Auth] INTERNAL_SERVICE_KEY not configured');
+      return c.json({ error: 'Service configuration error' }, 500);
+    }
+
+    if (receivedKey !== expectedKey) {
       console.error('[Processor Auth] Invalid internal key provided');
       return c.json({ error: 'Invalid internal key' }, 401);
     }
+
     console.log('[Processor Auth] Internal key validated successfully');
     await next();
     return;
@@ -93,9 +111,25 @@ app.post('/process-media', async (c) => {
   const syncService = c.get('syncService');
   
   try {
+    // CRITICAL: Validate credentials exist before processing
+    console.log('[Processor] Validating credentials...');
+    try {
+      await syncService.authService.getCredentials();
+    } catch (credentialError) {
+      console.error('[Processor] Credential validation failed:', credentialError.message);
+      if (credentialError.message.includes('credentials not found')) {
+        return c.json({ 
+          success: false, 
+          error: 'Telegram credentials not found in D1 app_config table. Please ensure Scanner has synced credentials first.' 
+        }, 401);
+      }
+      throw credentialError;
+    }
+    
     // Step 1: Fetch pending task with retry logic
     const pendingMessage = await c.env.DB.prepare(`
-      SELECT * FROM messages 
+      SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
+      FROM messages 
       WHERE media_status = 'pending' 
       OR media_status = 'failed'
       ORDER BY 
@@ -109,6 +143,15 @@ app.post('/process-media', async (c) => {
     }
 
     console.log(`[Processor] Processing media for message ${pendingMessage.telegram_message_id}, type: ${pendingMessage.media_type}, status: ${pendingMessage.media_status}`);
+    console.log(`[Processor] Pending message details:`, {
+      id: pendingMessage.id,
+      telegram_message_id: pendingMessage.telegram_message_id,
+      chat_id: pendingMessage.chat_id,
+      media_status: pendingMessage.media_status,
+      media_key: pendingMessage.media_key,
+      telegram_message_id_type: typeof pendingMessage.telegram_message_id,
+      chat_id_type: typeof pendingMessage.chat_id
+    });
 
     // Step 2: Process the media
     const result = await syncService.processMediaMessage(pendingMessage);
@@ -137,10 +180,17 @@ app.post('/process-media', async (c) => {
       WHERE media_status = 'pending' OR media_status = 'failed'
     `).first();
 
+    // CRITICAL: Return mediaKey for frontend instant display
+    let mediaKey = null;
+    if (result.success && result.mediaKey) {
+      mediaKey = result.mediaKey;
+    }
+
     return c.json({
       success: true,
       processedId: Number(pendingMessage.id),
       messageId: pendingMessage.telegram_message_id,
+      mediaKey: mediaKey, // Add mediaKey for frontend display
       mediaType: pendingMessage.media_type,
       remaining: remainingCount.count,
       skipped: result.skipped || false,

@@ -33,6 +33,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
           command: d1 migrations apply DB --remote
+          wranglerVersion: '4.60.0'
 
       - name: Deploy Scanner (Master)
         uses: cloudflare/wrangler-action@v3
@@ -40,16 +41,19 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
+          wranglerVersion: '4.60.0'
           secrets: |
             TELEGRAM_API_ID
             TELEGRAM_API_HASH
             ACCESS_KEY
             R2_PUBLIC_URL
+            INTERNAL_SERVICE_KEY
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
 
       - name: Deploy Processor
         uses: cloudflare/wrangler-action@v3
@@ -57,10 +61,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/processor'
+          wranglerVersion: '4.60.0'
           secrets: |
             ACCESS_KEY
+            INTERNAL_SERVICE_KEY
         env:
           ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
 
       - name: Deploy Viewer
         uses: cloudflare/wrangler-action@v3
@@ -68,14 +75,18 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api/viewer'
+          wranglerVersion: '4.60.0'
           secrets: |
             ACCESS_KEY
+            INTERNAL_SERVICE_KEY
         env:
           ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
 
       - name: Generate Frontend Config
         env:
           SUBDOMAIN: ${{ secrets.CLOUDFLARE_SUBDOMAIN }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
         run: |
           SCANNER_URL="https://telegram-archiver-api.$SUBDOMAIN.workers.dev"
           PROCESSOR_URL="https://telegram-processor.$SUBDOMAIN.workers.dev"
@@ -112,7 +123,7 @@ jobs:
             return async (url, options = {}) => {
               const headers = {
                 'Content-Type': 'application/json',
-                'X-Internal-Key': 'telegram-archiver-internal-2024',
+                'X-Internal-Key': '$INTERNAL_SERVICE_KEY',
                 ...options.headers,
               };
               
@@ -138,4 +149,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'ui'
+          wranglerVersion: '4.60.0'
           command: pages deploy dist --project-name telegram-archiver-ui

@@ -1,0 +1,216 @@
+import { useEffect, useMemo } from 'react';
+import { useMessageStore } from '../store/messageStore';
+import { useChannelStore } from '../store/channelStore';
+
+// Group messages by grouped_id for album display
+const groupMessages = (messages) => {
+  if (!messages || messages.length === 0) return [];
+  
+  console.log(`[useArchiver] Processing ${messages.length} messages for grouping`);
+  
+  const groups = {};
+  const result = [];
+  let groupCount = 0;
+  let individualCount = 0;
+  
+  // First pass: collect all messages by group
+  const groupMessages = {};
+  const individualMessages = [];
+  
+  for (const message of messages) {
+    const groupId = message.grouped_id;
+    
+    if (groupId) {
+      if (!groupMessages[groupId]) {
+        groupMessages[groupId] = [];
+      }
+      groupMessages[groupId].push(message);
+    } else {
+      individualMessages.push(message);
+    }
+  }
+  
+  // Second pass: create group objects with Master Message logic
+  for (const [groupId, groupMsgs] of Object.entries(groupMessages)) {
+    // CRITICAL: Find the "Master Message" - first message with non-empty text
+    let masterMessage = null;
+    
+    // First, try to find a message with text
+    for (const msg of groupMsgs) {
+      if (msg.text && msg.text.trim()) {
+        masterMessage = msg;
+        break;
+      }
+    }
+    
+    // If no message has text, use the first message as fallback
+    if (!masterMessage) {
+      masterMessage = groupMsgs[0];
+    }
+    
+    // Create group object with Master Message as base
+    const groupObject = {
+      ...masterMessage,
+      media_group: groupMsgs,
+      isGroup: true,
+      isAlbum: true, // Add isAlbum property for UI badge
+      groupSize: groupMsgs.length,
+      text: masterMessage.text || '',
+      originalMessageId: masterMessage.telegram_message_id,
+      hasText: !!(masterMessage.text && masterMessage.text.trim()),
+      // CRITICAL: Propagate media status and keys from all group members
+      media_status: masterMessage.media_status || 'none',
+      media_key: masterMessage.media_key || null,
+      r2_key: masterMessage.r2_key || masterMessage.media_key || null,
+      media_url: masterMessage.media_url || null
+    };
+    
+    console.log(`[useArchiver] Created group ${groupId} with Master Message:`, {
+      masterMessageId: masterMessage.telegram_message_id,
+      hasText: groupObject.hasText,
+      text: groupObject.text,
+      groupSize: groupObject.groupSize,
+      media_status: groupObject.media_status,
+      media_key: groupObject.media_key,
+      r2_key: groupObject.r2_key
+    });
+    
+    result.push(groupObject);
+    groupCount++;
+  }
+  
+  // Add individual messages
+  for (const message of individualMessages) {
+    result.push({
+      ...message,
+      isGroup: false,
+      isAlbum: false,
+      media_group: []
+    });
+    individualCount++;
+  }
+  
+  console.log(`[useArchiver] Grouping complete: ${groupCount} groups, ${individualCount} individual messages`);
+  
+  return result;
+};
+
+export const useArchiver = () => {
+  const { 
+    messages,
+    isProcessing, 
+    isSyncing, 
+    syncStatus, 
+    error,
+    startPolling,
+    phaseASync,
+    phaseBMediaProcessing,
+    fetchMessages
+  } = useMessageStore();
+  const { selectedChannel } = useChannelStore();
+
+  // Hook lifecycle logging
+  console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
+
+  // Memoized grouped messages
+  const groupedMessages = useMemo(() => {
+    console.log("[useArchiver] State update: messages length =", messages.length);
+    return groupMessages(messages);
+  }, [messages]);
+
+  // Load history when channel changes
+  useEffect(() => {
+    if (selectedChannel && selectedChannel.id) {
+      console.log(`[useArchiver] fetchMessages triggered for:`, selectedChannel.id, `(${selectedChannel.title})`);
+      console.log(`[useArchiver] Current messages length before fetch:`, messages.length);
+      console.log(`[useArchiver] Sync states - isProcessing: ${isProcessing}, isSyncing: ${isSyncing}`);
+      
+      // CRITICAL: Call fetchMessages immediately when channelId exists, do NOT wait for sync states
+      const { setLoading } = useMessageStore.getState();
+      setLoading(true);
+      console.log(`[useArchiver] Loading state set to true to prevent 'No messages' flash`);
+      
+      fetchMessages(50, true, selectedChannel.id)
+        .then(result => {
+          console.log(`[useArchiver] History load result:`, {
+            success: result?.success,
+            messageCount: result?.messages?.length || 0,
+            hasMore: result?.hasMore,
+            error: result?.error
+          });
+          
+          if (result?.success) {
+            console.log(`[useArchiver] Successfully loaded ${result?.messages?.length || 0} messages`);
+          } else {
+            console.error(`[useArchiver] Failed to load history:`, result?.error);
+          }
+        })
+        .catch(error => {
+          console.error('[useArchiver] Failed to load history:', error);
+        })
+        .finally(() => {
+          setLoading(false);
+          console.log(`[useArchiver] Loading state set to false`);
+        });
+    } else {
+      console.log('[useArchiver] No selected channel, skipping history load. Current messages length:', messages.length);
+    }
+    // CRITICAL: Only depend on selectedChannel?.id, NOT on sync states
+  }, [selectedChannel?.id, fetchMessages]);
+
+  // Auto-polling effect
+  useEffect(() => {
+    let pollCleanup;
+
+    if (isProcessing || isSyncing) {
+      console.log('[useArchiver] Starting polling for real-time updates...');
+      pollCleanup = startPolling();
+    }
+
+    return () => {
+      if (pollCleanup) {
+        pollCleanup();
+      }
+    };
+  }, [isProcessing, isSyncing, startPolling]);
+
+  // CRITICAL: Stale check for isProcessing state
+  useEffect(() => {
+    if (isProcessing) {
+      const staleTimer = setTimeout(() => {
+        console.warn('[useArchiver] isProcessing stuck for 30s, forcing reset');
+        const { setProcessing } = useMessageStore.getState();
+        setProcessing(false);
+      }, 30000);
+
+      return () => clearTimeout(staleTimer);
+    }
+  }, [isProcessing]);
+
+  // Combined sync function
+  const startSync = async () => {
+    try {
+      // Phase A: Sync messages
+      await phaseASync();
+      
+      // Phase B: Process media
+      await phaseBMediaProcessing();
+    } catch (error) {
+      console.error('[useArchiver] Sync failed:', error);
+    }
+  };
+
+  return {
+    // State
+    messages: groupedMessages, // Return grouped messages instead of raw messages
+    isProcessing,
+    isSyncing,
+    syncStatus,
+    error,
+    
+    // Actions
+    startSync,
+    phaseASync,
+    phaseBMediaProcessing
+  };
+};
