@@ -11,7 +11,7 @@ app.use('/*', cors({
   allowHeaders: ['Content-Type', 'X-Access-Key', 'X-Internal-Key'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
-  credentials: true,
+  credentials: false,
 }));
 
 // STEP 2: Internal Service Auth Middleware
