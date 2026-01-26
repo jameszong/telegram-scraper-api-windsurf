@@ -176,7 +176,7 @@ export class ProcessorSyncService {
       // Update database with media key and completed status
       await this.env.DB.prepare(`
         UPDATE messages SET media_key = ?, media_status = 'completed' WHERE id = ?
-      `).bind(key, pendingMessage.id).run();
+      `).bind(key, String(pendingMessage.id)).run();
 
       // Also save to media table for compatibility
       const mediaData = {
@@ -187,7 +187,7 @@ export class ProcessorSyncService {
         r2_key: key
       };
 
-      await this.saveMediaRecord(pendingMessage.id, mediaData);
+      await this.saveMediaRecord(String(pendingMessage.id), mediaData);
 
       // Free memory
       buffer = null;

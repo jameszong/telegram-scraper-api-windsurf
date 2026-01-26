@@ -128,7 +128,7 @@ app.post('/process-media', async (c) => {
       
       await c.env.DB.prepare(`
         UPDATE messages SET media_status = ? WHERE id = ?
-      `).bind(skipStatus, pendingMessage.id).run();
+      `).bind(skipStatus, String(pendingMessage.id)).run();
     }
 
     // Step 3: Count remaining pending tasks
@@ -139,7 +139,7 @@ app.post('/process-media', async (c) => {
 
     return c.json({
       success: true,
-      processedId: pendingMessage.id,
+      processedId: Number(pendingMessage.id),
       messageId: pendingMessage.telegram_message_id,
       mediaType: pendingMessage.media_type,
       remaining: remainingCount.count,
