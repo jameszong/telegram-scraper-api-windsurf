@@ -39,10 +39,25 @@ export const createInternalFetch = () => {
       ...options.headers,
     };
     
-    return fetch(url, {
+    console.log(`[Internal Fetch] ${options.method || 'GET'} ${url}`, {
+      headers: {
+        'Content-Type': headers['Content-Type'],
+        'X-Internal-Key': headers['X-Internal-Key'] ? 'PRESENT' : 'MISSING'
+      }
+    });
+    
+    const response = await fetch(url, {
       ...options,
       headers,
     });
+    
+    console.log(`[Internal Fetch] Response ${options.method || 'GET'} ${url}`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
+    
+    return response;
   };
 };
 
