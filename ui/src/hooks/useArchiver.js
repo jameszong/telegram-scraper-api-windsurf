@@ -107,7 +107,11 @@ export const useArchiver = () => {
     phaseASync,
     phaseBMediaProcessing,
     fetchMessages,
-    setMessages // For instant UI updates
+    setMessages, // For instant UI updates
+    setLoading,
+    setProcessing,
+    setError,
+    setSyncing
   } = useMessageStore();
   const { selectedChannel } = useChannelStore();
 
@@ -175,10 +179,8 @@ export const useArchiver = () => {
       while (batchCount < maxBatches) {
         batchCount++;
 
-        set({
-          syncProgress: batchCount,
-          syncStatus: `Phase B: Processing media... (Batch ${batchCount})`
-        });
+        setSyncing(`Phase B: Processing media... (Batch ${batchCount})`);
+        setProcessing(true);
 
         try {
           const response = await internalFetch(`${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${chatId}`, {
@@ -187,10 +189,7 @@ export const useArchiver = () => {
 
           if (response.status === 401) {
             console.error('[useArchiver] HTTP 401 Unauthorized');
-            set({
-              syncStatus: 'Error: Telegram credentials missing. Please refresh the page.',
-              error: 'Telegram credentials missing. Please refresh the page.'
-            });
+            setError('Error: Telegram credentials missing. Please refresh the page.');
             break;
           }
 
@@ -208,9 +207,7 @@ export const useArchiver = () => {
           // Handle FloodWaitError
           if (data.floodWait) {
             console.log(`[useArchiver] FloodWait detected, waiting ${data.floodWait}s`);
-            set({
-              syncStatus: `Rate limited. Waiting ${data.floodWait} seconds...`
-            });
+            setSyncing(`Rate limited. Waiting ${data.floodWait} seconds...`);
             await new Promise(resolve => setTimeout(resolve, data.floodWait * 1000));
             continue;
           }
@@ -238,7 +235,7 @@ export const useArchiver = () => {
               }
               return msg;
             });
-            set({ messages: updatedMessages });
+            setMessages(updatedMessages);
           }
 
           processedCount += Number(data.processedCount || 0);
@@ -246,34 +243,28 @@ export const useArchiver = () => {
           const hasMore = remaining > 0;
 
           if (!hasMore) {
-            set({
-              syncStatus: `Phase B: All media processing complete! Processed ${processedCount} items.`
-            });
+            setSyncing(`Phase B: All media processing complete! Processed ${processedCount} items.`);
             break;
           }
 
-          set({
-            syncStatus: `Phase B: Processing media... ${remaining} remaining (Processed: ${processedCount})`
-          });
+          setSyncing(`Phase B: Processing media... ${remaining} remaining (Processed: ${processedCount})`);
 
           // Wait before next batch
           await new Promise(resolve => setTimeout(resolve, 800));
 
         } catch (error) {
           console.error(`[useArchiver] Batch ${batchCount} error:`, error);
-          set({
-            syncStatus: `Error: Batch ${batchCount} failed - ${error.message}`,
-            error: error.message
-          });
+          setError(`Error: Batch ${batchCount} failed - ${error.message}`);
           break;
         }
       }
 
     } finally {
       isTriggeringRef.current = false;
-      set({ isProcessing: false, isLoading: false });
+      setProcessing(false);
+      setLoading(false);
     }
-  }, [isProcessing, isSyncing, set, internalFetch, PROCESSOR_URL, VIEWER_URL]);
+  }, [isProcessing, isSyncing, setMessages, setError, setProcessing, setLoading, setSyncing, internalFetch, PROCESSOR_URL, VIEWER_URL]);
 
   // Hook lifecycle logging
   console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
