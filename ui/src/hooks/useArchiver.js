@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useCallback, useRef } from 'react';
 import { useMessageStore } from '../store/messageStore';
 import { useChannelStore } from '../store/channelStore';
+import { internalFetch, PROCESSOR_URL, VIEWER_URL } from '../utils/api';
 
 // Group messages by grouped_id for album display
 const groupMessages = (messages) => {
@@ -105,9 +106,55 @@ export const useArchiver = () => {
     startPolling,
     phaseASync,
     phaseBMediaProcessing,
-    fetchMessages
+    fetchMessages,
+    setMessages // For instant UI updates
   } = useMessageStore();
   const { selectedChannel } = useChannelStore();
+
+  // Refs for debouncing/throttling
+  const pendingTimeoutRef = useRef(null);
+  const isTriggeringRef = useRef(false);
+
+  // Identify pending media messages
+  const identifyPendingMessages = useCallback((messages) => {
+    if (!messages || !Array.isArray(messages)) return [];
+    return messages.filter(msg => msg.media_status === 'pending' && msg.media_type && msg.media_type !== '');
+  }, []);
+
+  // Throttled/debounced trigger for pending media
+  const triggerPendingMedia = useCallback(async (messages) => {
+    if (!messages || isProcessing || isSyncing || isTriggeringRef.current) {
+      console.log('[useArchiver] Skipping trigger - processing in progress or already triggering');
+      return;
+    }
+
+    const pendingMessages = identifyPendingMessages(messages);
+    if (pendingMessages.length === 0) {
+      console.log('[useArchiver] No pending media to process');
+      return;
+    }
+
+    console.log(`[useArchiver] Triggering auto-processing for ${pendingMessages.length} pending media items`);
+
+    // Clear any existing timeout
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current);
+    }
+
+    // Debounce: wait 500ms before triggering to batch rapid changes
+    pendingTimeoutRef.current = setTimeout(async () => {
+      isTriggeringRef.current = true;
+      try {
+        // Use the existing phaseBMediaProcessing but in auto mode
+        await phaseBMediaProcessing();
+      } catch (error) {
+        console.error('[useArchiver] Auto-processing failed:', error);
+      } finally {
+        isTriggeringRef.current = false;
+        pendingTimeoutRef.current = null;
+      }
+    }, 500);
+  }, [isProcessing, isSyncing, identifyPendingMessages, phaseBMediaProcessing]);
 
   // Hook lifecycle logging
   console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
@@ -211,6 +258,7 @@ export const useArchiver = () => {
     // Actions
     startSync,
     phaseASync,
-    phaseBMediaProcessing
+    phaseBMediaProcessing,
+    triggerPendingMedia // Expose for auto-trigger from components
   };
 };
