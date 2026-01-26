@@ -156,6 +156,125 @@ export const useArchiver = () => {
     }, 500);
   }, [isProcessing, isSyncing, identifyPendingMessages, phaseBMediaProcessing]);
 
+  // Targeted processing with chatId and live UI updates
+  const triggerTargetedProcessing = useCallback(async (chatId) => {
+    if (isProcessing || isSyncing || isTriggeringRef.current) {
+      console.log('[useArchiver] Skipping targeted processing - already processing');
+      return;
+    }
+
+    console.log(`[useArchiver] Starting targeted processing for chatId: ${chatId}`);
+    isTriggeringRef.current = true;
+
+    try {
+      let processedCount = 0;
+      let batchCount = 0;
+      const batchSize = 5;
+      const maxBatches = 100;
+
+      while (batchCount < maxBatches) {
+        batchCount++;
+
+        set({
+          syncProgress: batchCount,
+          syncStatus: `Phase B: Processing media... (Batch ${batchCount})`
+        });
+
+        try {
+          const response = await internalFetch(`${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${chatId}`, {
+            method: 'POST'
+          });
+
+          if (response.status === 401) {
+            console.error('[useArchiver] HTTP 401 Unauthorized');
+            set({
+              syncStatus: 'Error: Telegram credentials missing. Please refresh the page.',
+              error: 'Telegram credentials missing. Please refresh the page.'
+            });
+            break;
+          }
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          console.log(`[useArchiver] Batch ${batchCount} response:`, data);
+
+          if (!data || !data.success) {
+            throw new Error(data?.error || 'Batch processing failed');
+          }
+
+          // Handle FloodWaitError
+          if (data.floodWait) {
+            console.log(`[useArchiver] FloodWait detected, waiting ${data.floodWait}s`);
+            set({
+              syncStatus: `Rate limited. Waiting ${data.floodWait} seconds...`
+            });
+            await new Promise(resolve => setTimeout(resolve, data.floodWait * 1000));
+            continue;
+          }
+
+          // Live UI updates - immediately update messages state
+          if (data.results && data.results.length > 0) {
+            const { messages: currentMessages } = get();
+            const updatedMessages = currentMessages.map(msg => {
+              const result = data.results.find(r => r.messageId === msg.telegram_message_id);
+              if (result && result.success && !result.skipped && result.mediaKey) {
+                console.log(`[useArchiver] Live update: Message ${msg.telegram_message_id} completed`);
+                return {
+                  ...msg,
+                  media_status: 'completed',
+                  media_key: result.mediaKey,
+                  r2_key: result.mediaKey,
+                  media_url: `${VIEWER_URL}/media/${result.mediaKey}`
+                };
+              } else if (result && result.skipped) {
+                return {
+                  ...msg,
+                  media_status: result.skipReason?.includes('Non-photo') ? 'skipped_type' :
+                               result.skipReason?.includes('large') ? 'skipped_large' : 'skipped'
+                };
+              }
+              return msg;
+            });
+            set({ messages: updatedMessages });
+          }
+
+          processedCount += Number(data.processedCount || 0);
+          const remaining = Number(data.remaining || 0);
+          const hasMore = remaining > 0;
+
+          if (!hasMore) {
+            set({
+              syncStatus: `Phase B: All media processing complete! Processed ${processedCount} items.`
+            });
+            break;
+          }
+
+          set({
+            syncStatus: `Phase B: Processing media... ${remaining} remaining (Processed: ${processedCount})`
+          });
+
+          // Wait before next batch
+          await new Promise(resolve => setTimeout(resolve, 800));
+
+        } catch (error) {
+          console.error(`[useArchiver] Batch ${batchCount} error:`, error);
+          set({
+            syncStatus: `Error: Batch ${batchCount} failed - ${error.message}`,
+            error: error.message
+          });
+          break;
+        }
+      }
+
+    } finally {
+      isTriggeringRef.current = false;
+      set({ isProcessing: false, isLoading: false });
+    }
+  }, [isProcessing, isSyncing, get, set, internalFetch, PROCESSOR_URL, VIEWER_URL]);
+
   // Hook lifecycle logging
   console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
 
@@ -259,6 +378,7 @@ export const useArchiver = () => {
     startSync,
     phaseASync,
     phaseBMediaProcessing,
-    triggerPendingMedia // Expose for auto-trigger from components
+    triggerPendingMedia, // Expose for auto-trigger from components
+    triggerTargetedProcessing // Expose for targeted processing with chatId
   };
 };

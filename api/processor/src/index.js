@@ -146,12 +146,15 @@ app.post('/process-media', async (c) => {
       ? Math.max(1, Math.min(requestedBatchSize, 10))
       : 10;
     
+    // Get chatId parameter for targeted processing
+    const chatId = c.req.query('chatId');
+    
     if (batchMode) {
-      return await processBatchMedia(c, syncService, batchSize);
+      return await processBatchMedia(c, syncService, batchSize, chatId);
     }
     
     // Original single-item processing logic
-    return await processSingleMedia(c, syncService);
+    return await processSingleMedia(c, syncService, chatId);
     
   } catch (error) {
     console.error('[Processor] Process media error:', error);
@@ -163,18 +166,28 @@ app.post('/process-media', async (c) => {
 });
 
 // Single media processing (original logic)
-async function processSingleMedia(c, syncService) {
-  // Step 1: Fetch pending task with retry logic
-  const pendingMessage = await c.env.DB.prepare(`
+async function processSingleMedia(c, syncService, chatId) {
+  // Step 1: Fetch pending task with retry logic, optionally scoped to chatId
+  let query = `
     SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
     FROM messages 
-    WHERE media_status = 'pending' 
-    OR media_status = 'failed'
+    WHERE (media_status = 'pending' OR media_status = 'failed')
+  `;
+  const params = [];
+  
+  if (chatId) {
+    query += ` AND chat_id = ?`;
+    params.push(String(chatId));
+  }
+  
+  query += `
     ORDER BY 
       CASE WHEN media_status = 'pending' THEN 1 ELSE 2 END,
       id DESC
     LIMIT 1
-  `).first();
+  `;
+  
+  const pendingMessage = await c.env.DB.prepare(query).bind(...params).first();
 
   if (!pendingMessage) {
     return c.json({ success: true, remaining: 0, message: 'No pending media to process' });
@@ -238,8 +251,8 @@ async function processSingleMedia(c, syncService) {
 }
 
 // Batch media processing (new logic)
-async function processBatchMedia(c, syncService, batchSize) {
-  console.log(`[Processor] Starting batch processing with size: ${batchSize}`);
+async function processBatchMedia(c, syncService, batchSize, chatId) {
+  console.log(`[Processor] Starting batch processing with size: ${batchSize}, chatId: ${chatId || 'all'}`);
   
   const results = [];
   let processedCount = 0;
@@ -247,17 +260,27 @@ async function processBatchMedia(c, syncService, batchSize) {
   
   // Process multiple items in sequence (due to GramJS session lock)
   for (let i = 0; i < batchSize; i++) {
-    // Fetch next pending item
-    const pendingMessage = await c.env.DB.prepare(`
+    // Fetch next pending item, optionally scoped to chatId
+    let query = `
       SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
       FROM messages 
-      WHERE media_status = 'pending' 
-      OR media_status = 'failed'
+      WHERE (media_status = 'pending' OR media_status = 'failed')
+    `;
+    const params = [];
+    
+    if (chatId) {
+      query += ` AND chat_id = ?`;
+      params.push(String(chatId));
+    }
+    
+    query += `
       ORDER BY 
         CASE WHEN media_status = 'pending' THEN 1 ELSE 2 END,
         id DESC
       LIMIT 1
-    `).first();
+    `;
+    
+    const pendingMessage = await c.env.DB.prepare(query).bind(...params).first();
 
     if (!pendingMessage) {
       console.log(`[Processor Batch] No more pending items after ${i} iterations`);
@@ -312,19 +335,40 @@ async function processBatchMedia(c, syncService, batchSize) {
       }
     } catch (error) {
       console.error(`[Processor Batch] Error processing item ${pendingMessage.telegram_message_id}:`, error);
-      results.push({
-        success: false,
-        error: error.message,
-        messageId: pendingMessage.telegram_message_id
-      });
+      
+      // Check for FloodWaitError
+      if (error.message && error.message.includes('FloodWaitError')) {
+        const waitSeconds = error.message.match(/(\d+)s/) ? parseInt(error.message.match(/(\d+)s/)[1]) : 60;
+        console.error(`[Processor Batch] FloodWaitError detected, need to wait ${waitSeconds} seconds`);
+        results.push({
+          success: false,
+          floodWait: waitSeconds,
+          error: `FloodWaitError: Need to wait ${waitSeconds} seconds`,
+          messageId: pendingMessage.telegram_message_id
+        });
+      } else {
+        results.push({
+          success: false,
+          error: error.message,
+          messageId: pendingMessage.telegram_message_id
+        });
+      }
     }
   }
   
-  // Count remaining pending tasks
-  const remainingCount = await c.env.DB.prepare(`
+  // Count remaining pending tasks, optionally scoped to chatId
+  let remainingQuery = `
     SELECT COUNT(*) as count FROM messages 
-    WHERE media_status = 'pending' OR media_status = 'failed'
-  `).first();
+    WHERE (media_status = 'pending' OR media_status = 'failed')
+  `;
+  const remainingParams = [];
+  
+  if (chatId) {
+    remainingQuery += ` AND chat_id = ?`;
+    remainingParams.push(String(chatId));
+  }
+  
+  const remainingCount = await c.env.DB.prepare(remainingQuery).bind(...remainingParams).first();
 
   console.log(`[Processor Batch] Completed: ${processedCount} processed, ${skippedCount} skipped, ${remainingCount.count} remaining`);
   

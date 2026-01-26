@@ -47,9 +47,11 @@ export class ProcessorSyncService {
         throw new Error('No target channel selected');
       }
 
-      // Connect to Telegram
+      // Connect to Telegram with robust initialization
       const client = await this.getClient();
+      console.log(`[Processor] Initializing Telegram client connection...`);
       await client.connect();
+      console.log(`[Processor] Telegram client connected successfully`);
 
       // Get channel entity
       const channelBigInt = toBigInt(pendingMessage.chat_id);
@@ -129,6 +131,18 @@ export class ProcessorSyncService {
       } catch (error) {
         console.error(`[Processor] Error/Timeout for message ${message.id}:`, error.message);
         
+        // Check for FloodWaitError
+        if (error.message && error.message.includes('FLOOD_WAIT')) {
+          const waitSeconds = error.message.match(/(\d+)s/) ? parseInt(error.message.match(/(\d+)s/)[1]) : 60;
+          console.error(`[Processor] FloodWaitError detected, need to wait ${waitSeconds} seconds`);
+          return {
+            success: false,
+            floodWait: waitSeconds,
+            error: `FloodWaitError: Need to wait ${waitSeconds} seconds`,
+            mediaKey: null
+          };
+        }
+        
         return {
           success: false,
           error: error.message,
@@ -195,6 +209,7 @@ export class ProcessorSyncService {
       `).bind(key, msgId, chatId).run();
 
       console.log(`[Processor] DB Update for ${msgId}: changes=${result.meta.changes}`);
+      console.log(`[DB] Message ${msgId} updated, changes: ${result.meta.changes}`);
 
       // CRITICAL: If changes === 0, throw explicit error to stop 'false success' loop
       if (result.meta.changes === 0) {

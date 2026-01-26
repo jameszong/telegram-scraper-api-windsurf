@@ -13,7 +13,7 @@ const MessageGallery = () => {
     fetchMessages 
   } = useMessageStore();
   const { selectedChannel, channels } = useChannelStore();
-  const { messages, isProcessing, isSyncing, syncStatus, startSync, triggerPendingMedia } = useArchiver();
+  const { messages, isProcessing, isSyncing, syncStatus, startSync, triggerPendingMedia, triggerTargetedProcessing } = useArchiver();
   
   const [selectedImage, setSelectedImage] = useState(null);
   const [galleryModal, setGalleryModal] = useState({ isOpen: false, images: [], initialIndex: 0 });
@@ -51,16 +51,16 @@ const MessageGallery = () => {
 
   // Auto-trigger processing for pending media when messages change
   useEffect(() => {
-    if (!messages || messages.length === 0) return;
+    if (!messages || messages.length === 0 || !selectedChannel) return;
     
     // Check if any visible messages have pending media
     const hasPendingMedia = messages.some(msg => msg.media_status === 'pending' && msg.media_type && msg.media_type !== '');
     
     if (hasPendingMedia && !isProcessing && !isSyncing) {
-      console.log('[MessageGallery] Detected pending media in visible messages, triggering auto-processing');
-      triggerPendingMedia(messages);
+      console.log('[MessageGallery] Detected pending media in visible messages, triggering targeted processing for channel:', selectedChannel.id);
+      triggerTargetedProcessing(selectedChannel.id);
     }
-  }, [messages, isProcessing, isSyncing, triggerPendingMedia]);
+  }, [messages, isProcessing, isSyncing, selectedChannel, triggerTargetedProcessing]);
 
   // Helper to render media status
   const renderMediaStatus = (status) => {
