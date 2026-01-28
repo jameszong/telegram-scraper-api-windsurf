@@ -5,6 +5,8 @@ export class ProcessorAuthService {
   constructor(env) {
     this.env = env;
     this.credentials = null;
+    this.clientInstance = null; // Singleton client instance
+    this.clientConnected = false; // Track connection state
   }
 
   // CORRECT: Fetch all credentials from D1 (including dynamic Session)
@@ -107,7 +109,13 @@ export class ProcessorAuthService {
 
   async getClient() {
     try {
-      console.log('[Processor Auth] Getting Telegram client...');
+      // LAZY LOADING: Return existing client if already created
+      if (this.clientInstance) {
+        console.log('[Processor Auth] Reusing existing Telegram client instance');
+        return this.clientInstance;
+      }
+      
+      console.log('[Processor Auth] Lazy loading Telegram client (first time)...');
       const credentials = await this.getCredentials();
       
       // Validate credentials before creating client
@@ -131,19 +139,22 @@ export class ProcessorAuthService {
       console.log('[Processor Auth] Creating StringSession...');
       const session = new StringSession(credentials.session || '');
       
-      // Create client with better error handling
-      console.log('[Processor Auth] Creating TelegramClient...');
-      const client = new TelegramClient(session, credentials.apiId, credentials.apiHash, {
+      // Create client with better error handling (SINGLETON)
+      console.log('[Processor Auth] Creating TelegramClient (singleton)...');
+      this.clientInstance = new TelegramClient(session, credentials.apiId, credentials.apiHash, {
         connectionRetries: 3,
         retryDelay: 2000,
         useWSS: true, // Try WebSocket Secure connection
         maxConcurrentDownloads: 1, // Limit concurrent downloads
       });
       
-      console.log('[Processor Auth] TelegramClient created successfully');
-      return client;
+      console.log('[Processor Auth] TelegramClient singleton created successfully');
+      return this.clientInstance;
     } catch (error) {
       console.error('[CRITICAL] Failed to create Telegram client:', error);
+      // Reset instance on error
+      this.clientInstance = null;
+      this.clientConnected = false;
       throw new Error(`Failed to create Telegram client: ${error.message}`);
     }
   }

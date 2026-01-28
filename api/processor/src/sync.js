@@ -209,74 +209,6 @@ export class ProcessorSyncService {
         };
       }
 
-      // === DRY RUN MODE - SKIP DOWNLOAD/UPLOAD TO ISOLATE CRASH ===
-      // This prevents OOM and network issues to test Worker infrastructure
-      
-      // SAFE METADATA EXTRACTION (No crash allowed)
-      let debugInfo = "No Media";
-      let extractedSize = 0;
-      try {
-        if (message.media) {
-          if (message.media.document) {
-            extractedSize = message.media.document.size || 0;
-            debugInfo = `Document (${message.media.document.mimeType || 'unknown'})`;
-          } else if (message.media.photo) {
-            extractedSize = size; // Use size from filter check
-            debugInfo = "Photo";
-          }
-        }
-      } catch (e) { 
-        debugInfo = "Metadata Error";
-        console.error(`[DRY RUN] Metadata extraction error:`, e);
-      }
-
-      // FORCE SKIP DOWNLOAD (Dry Run)
-      console.log(`[DRY RUN] Would process: MsgID ${message.id} | ${debugInfo} | Size: ${extractedSize} bytes`);
-      
-      // Generate a placeholder key for dry run
-      const r2ChatIdStr = String(targetChannelId);
-      const messageIdStr = message.id.toString();
-      const dryRunKey = `dry_run/${r2ChatIdStr}_${messageIdStr}_placeholder.jpg`;
-      
-      // Return "Virtual Success" to prove connectivity
-      console.log(`[DRY RUN] Virtual success for message ${pendingMessage.telegram_message_id}`);
-      
-      // Update database with dry run status
-      console.log(`[DRY RUN] Updating DB for message ${pendingMessage.telegram_message_id} with dry run key: ${dryRunKey}`);
-      
-      // CRITICAL: Use telegram_message_id AND chat_id as unique key
-      const msgIdStr = String(pendingMessage.telegram_message_id);
-      const chatIdStr = String(pendingMessage.chat_id);
-      
-      const result = await this.env.DB.prepare(`
-        UPDATE messages 
-        SET media_status = 'completed', media_key = ? 
-        WHERE telegram_message_id = ? AND chat_id = ?
-      `).bind(dryRunKey, msgIdStr, chatIdStr).run();
-      
-      if (result.meta.changes === 0) {
-        throw new Error(`[DRY RUN] DB UPDATE FAILED - No rows affected for message ${msgIdStr}`);
-      }
-      
-      console.log(`[DRY RUN] DB updated successfully for message ${msgIdStr}`);
-      
-      // Return "Fake" Success to prove connectivity
-      return { 
-        success: true, 
-        dryRun: true, 
-        mediaKey: dryRunKey,
-        mediaData: {
-          type: 'image',
-          extension: 'jpg',
-          size: extractedSize,
-          mime_type: 'image/jpeg',
-          r2_key: dryRunKey
-        }
-      };
-      
-      // === COMMENTED OUT: ACTUAL DOWNLOAD/UPLOAD CODE ===
-      // The following code is disabled for dry run mode
-      /*
       // 4. Safe Download - Filter passed
       console.log(`[Filter Passed] Downloading ${mimeType} (${size} bytes)...`);
 
@@ -371,9 +303,48 @@ export class ProcessorSyncService {
         console.error(`[Processor] R2 upload failed for message ${message.id}:`, uploadError);
         throw new Error('R2 upload failed: ' + uploadError.message);
       }
-      */
-      // === DRY RUN COMPLETE ===
-      // All actual download/upload code is commented out above
+      
+      // Update database with media key and completed status
+      console.log(`[Processor] Updating DB for message ${pendingMessage.telegram_message_id} with key: ${key}`);
+
+      // CRITICAL: Use telegram_message_id AND chat_id as unique key
+      const msgIdStr = String(pendingMessage.telegram_message_id);
+      const chatIdStr = String(pendingMessage.chat_id);
+
+      const result = await this.env.DB.prepare(`
+        UPDATE messages 
+        SET media_status = 'completed', media_key = ? 
+        WHERE telegram_message_id = ? AND chat_id = ?
+      `).bind(key, msgIdStr, chatIdStr).run();
+
+      console.log(`[Persistence] Updated Msg ${msgIdStr}: changes=${result.meta.changes}`);
+
+      // CRITICAL: If changes === 0, throw explicit error
+      if (result.meta.changes === 0) {
+        throw new Error(`DB UPDATE FAILED - No rows affected for message ${msgIdStr}`);
+      }
+
+      console.log(`[Processor] SUCCESS: DB updated for message ${msgIdStr}`);
+
+      // Return success with media data
+      const mediaData = {
+        type: this.getMediaType(message.media.className),
+        extension: this.getMediaExtension(message.media.className),
+        size: buffer.length,
+        mime_type: this.getContentType(message.media.className),
+        r2_key: key
+      };
+
+      // Free memory
+      buffer = null;
+
+      console.log(`[Processor] Media processing completed for message ${pendingMessage.telegram_message_id}`);
+
+      return {
+        success: true,
+        mediaKey: key,
+        mediaData: mediaData
+      };
 
     } catch (error) {
       console.error(`[Processor] Error processing media for message ${pendingMessage.telegram_message_id}:`, error);
