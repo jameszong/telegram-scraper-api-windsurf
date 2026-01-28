@@ -257,101 +257,92 @@ export const useMessageStore = create(
       set({ 
         syncStatus: 'Phase B: Processing media queue...',
         isProcessing: true,
-        lastActivityTimestamp: Date.now(), // Initialize activity timestamp
+        lastActivityTimestamp: Date.now(),
         error: null
       });
       
+      // AIMD (Additive Increase, Multiplicative Decrease) State
       let processedCount = 0;
       let batchCount = 0;
-      let batchSize = 1; // 动态批处理大小，从 1 开始
-      const maxBatches = 200; // Safety limit
-      let retryCount = 0;
-      const maxRetries = 3; // 最多重试3次
-      let rateLimitRetries = 0; // 429 错误的连续重试次数
-      let baseWaitTime = 5; // 基础等待时间（秒）
-      let recoveryMode = false; // 恢复模式标志
+      let batchSize = 1; // Start in Safe Mode
+      const MAX_BATCH_SIZE = 5; // Maximum batch size
+      const maxBatches = 1000; // Increased for overnight runs
+      let consecutiveSuccesses = 0; // Track success streak for AIMD
+      let fatalErrorCount = 0; // Track fatal errors (500s, network)
+      const MAX_FATAL_ERRORS = 5; // Abort after 5 consecutive fatal errors
       
       // Get current channel ID for targeted processing
       const currentChannelId = useChannelStore.getState().selectedChannel?.id;
-      console.log(`[Phase B] Starting targeted processing for channel: ${currentChannelId}`);
+      console.log(`[Phase B AIMD] Starting with batchSize=1 for channel: ${currentChannelId}`);
       
-      // Client-side orchestration loop
+      // Resilient Loop with AIMD
       const processAllMedia = async () => {
         while (batchCount < maxBatches) {
           batchCount++;
           
           set({
             syncProgress: batchCount,
-            syncStatus: `Phase B: Processing media... (Batch ${batchCount})`
+            syncStatus: `Phase B: Processing (Batch ${batchCount}, Size ${batchSize})...`
           });
           
           try {
-            // Include chatId parameter for targeted processing
+            // Build URL with current batch size
             const url = currentChannelId 
               ? `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${currentChannelId}`
               : `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}`;
             
-            console.log(`[Phase B] Requesting batch ${batchCount} with retry ${retryCount}/${maxRetries}`);
+            console.log(`[Phase B AIMD] Batch ${batchCount}: batchSize=${batchSize}, consecutiveSuccesses=${consecutiveSuccesses}`);
             const response = await internalFetch(url, {
               method: 'POST'
             });
             
-            // 成功请求后重置所有重试计数
-            retryCount = 0;
-            rateLimitRetries = 0;
-            
-            // 如果在恢复模式且已成功 5 次，退出恢复模式
-            if (recoveryMode && batchCount % 5 === 0) {
-              console.log('[Phase B] Recovery successful, returning to normal mode');
-              recoveryMode = false;
-              batchSize = 1; // 保持安全的批处理大小
-            }
-            
+            // === HANDLE 401 UNAUTHORIZED ===
             if (response.status === 401) {
-              console.error('[Phase B] HTTP 401 Unauthorized - Credential error detected');
+              console.error('[Phase B AIMD] FATAL: HTTP 401 Unauthorized');
               set({
-                syncStatus: 'Error: Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.',
-                error: 'Telegram credentials missing. Please refresh the page to let Scanner sync credentials first.'
+                syncStatus: 'Error: Telegram credentials missing. Please refresh the page.',
+                error: 'Telegram credentials missing',
+                isProcessing: false
               });
-              return false; // Stop processing
+              return false; // ABORT
             }
             
-            // Handle 429 FloodWaitError with Smart Retry and Exponential Backoff
+            // === HANDLE 429 RATE LIMIT (NOT A FAILURE) ===
             if (response.status === 429) {
-              rateLimitRetries++;
+              console.warn(`[Phase B AIMD] Rate limit hit. Applying AIMD: Multiplicative Decrease`);
               
-              let waitTime = baseWaitTime;
-              const data = await response.json().catch(() => ({}));
+              // AIMD: Multiplicative Decrease - Drop to batchSize = 1
+              batchSize = 1;
+              consecutiveSuccesses = 0; // Reset success counter
               
-              // 优先使用服务器返回的等待时间
-              if (data.floodWait) {
-                waitTime = data.floodWait;
+              // Parse Retry-After header (priority) or response body
+              let waitTime = 10; // Default 10s
+              const retryAfterHeader = response.headers.get('Retry-After');
+              
+              if (retryAfterHeader) {
+                waitTime = parseInt(retryAfterHeader, 10);
+                console.log(`[Phase B AIMD] Using Retry-After header: ${waitTime}s`);
               } else {
-                // 指数退避：5s -> 10s -> 20s -> 40s
-                waitTime = baseWaitTime * Math.pow(2, rateLimitRetries - 1);
-                // 最大等待时间 60 秒
-                waitTime = Math.min(waitTime, 60);
+                const data = await response.json().catch(() => ({}));
+                if (data.floodWait) {
+                  waitTime = data.floodWait;
+                  console.log(`[Phase B AIMD] Using floodWait from body: ${waitTime}s`);
+                }
               }
               
-              console.log(`[Phase B] Rate limit hit (attempt ${rateLimitRetries}). Waiting ${waitTime}s before retry...`);
+              // Add 1s buffer for safety
+              waitTime += 1;
               
-              // 进入恢复模式：强制 batchSize = 1
-              if (!recoveryMode) {
-                console.log('[Phase B] Entering recovery mode: forcing batchSize = 1');
-                recoveryMode = true;
-                batchSize = 1;
-              }
-              
+              console.log(`[Phase B AIMD] Cooling down for ${waitTime}s... (batchSize reset to 1)`);
               set({
-                syncStatus: `Rate limit hit. Waiting ${waitTime}s before retry... (Attempt ${rateLimitRetries})`
+                syncStatus: `⏸️ Rate Limited. Paused for ${waitTime}s... (Batch size reset to 1)`,
+                lastActivityTimestamp: Date.now() // Update activity to prevent watchdog kill
               });
               
-              // 等待指定时间后自动重试
+              // Wait and retry the SAME batch
               await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-              
-              // 重试当前批次
-              batchCount--;
-              continue;
+              batchCount--; // Retry current batch
+              continue; // NOT a failure, just a pause
             }
             
             if (!response.ok) {
@@ -400,6 +391,17 @@ export const useMessageStore = create(
               return singleData?.remaining === 0; // Continue if more items
             }
             
+            // === SUCCESS: AIMD Additive Increase ===
+            consecutiveSuccesses++;
+            fatalErrorCount = 0; // Reset fatal error counter on success
+            
+            // AIMD: Additive Increase - Increase batch size by 1 after success
+            if (consecutiveSuccesses >= 2 && batchSize < MAX_BATCH_SIZE) {
+              batchSize++;
+              consecutiveSuccesses = 0; // Reset counter after increase
+              console.log(`[Phase B AIMD] Additive Increase: batchSize increased to ${batchSize}`);
+            }
+            
             // OPTIMISTIC UI UPDATE: Use processedItems for instant updates
             const { messages } = get();
             const updatedMessages = messages.map(msg => {
@@ -439,106 +441,71 @@ export const useMessageStore = create(
             
             if (!hasMore) {
               set({
-                syncStatus: `Phase B: All media processing complete! Processed ${processedCount} items.`
+                syncStatus: `✅ Phase B: All media processing complete! Processed ${processedCount} items.`,
+                isProcessing: false
               });
               return false; // Stop processing
             }
             
             set({
-              syncStatus: `Phase B: Processing media... ${remaining} remaining (Processed: ${processedCount})`
+              syncStatus: `Phase B: Processing... ${remaining} remaining (Processed: ${processedCount}, Batch Size: ${batchSize})`
             });
             
-            // Wait before next batch to avoid overwhelming the worker
-            await new Promise(resolve => setTimeout(resolve, 800));
+            // Small delay between batches
+            await new Promise(resolve => setTimeout(resolve, 500));
             
           } catch (error) {
-            console.error(`[Phase B] Batch ${batchCount} error:`, error);
+            console.error(`[Phase B AIMD] FATAL ERROR in batch ${batchCount}:`, error);
             
-            // 特殊处理超时错误
-            if (error.name === 'AbortError' || error.message.includes('timeout')) {
-              console.log(`[Phase B] Timeout detected, reducing batch size and retrying`);
-              
-              // 动态减小批处理大小（如果当前大小 > 1）
-              if (batchSize > 1) {
-                console.log(`[Phase B] Reducing batch size from ${batchSize} to 1`);
-                // 这里我们不能直接修改 const，但可以记录并建议用户刷新
-                set({
-                  syncStatus: `Timeout detected. Please refresh the page to continue with smaller batch size.`,
-                  error: 'Request timeout. Please refresh the page.'
-                });
-                return false;
-              }
-              
-              retryCount++;
-              if (retryCount <= maxRetries) {
-                const waitTime = 2000; // 超时后等待 2 秒
-                console.log(`[Phase B] Timeout retry (${retryCount}/${maxRetries}) after ${waitTime}ms`);
-                
-                set({
-                  syncStatus: `Timeout, retrying (${retryCount}/${maxRetries})...`
-                });
-                
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                batchCount--; // 重置批次计数器以重试当前批次
-                continue;
-              }
-            }
+            // === FATAL ERROR HANDLING ===
+            // Only abort on: 500s, Network Errors after MAX_FATAL_ERRORS consecutive failures
+            fatalErrorCount++;
+            consecutiveSuccesses = 0; // Reset success counter
             
-            // 处理 HTTP 429 错误（从 error.message 中捕获）
-            if (error.message.includes('HTTP 429')) {
-              rateLimitRetries++;
+            // Check if this is a recoverable error
+            const isNetworkError = error.message.includes('Failed to fetch') || 
+                                   error.message.includes('ERR_CONNECTION') || 
+                                   error.message.includes('NetworkError') ||
+                                   error.name === 'AbortError' ||
+                                   error.message.includes('timeout');
+            
+            const isServerError = error.message.includes('HTTP 5');
+            
+            if (isNetworkError || isServerError) {
+              console.warn(`[Phase B AIMD] Recoverable error (${fatalErrorCount}/${MAX_FATAL_ERRORS}): ${error.message}`);
               
-              // 指数退避：5s -> 10s -> 20s -> 40s
-              const waitTime = baseWaitTime * Math.pow(2, rateLimitRetries - 1);
-              const cappedWaitTime = Math.min(waitTime, 60);
-              
-              console.log(`[Phase B] Rate limit error (attempt ${rateLimitRetries}). Waiting ${cappedWaitTime}s before retry...`);
-              
-              // 进入恢复模式：强制 batchSize = 1
-              if (!recoveryMode) {
-                console.log('[Phase B] Entering recovery mode: forcing batchSize = 1');
-                recoveryMode = true;
-                batchSize = 1;
+              if (fatalErrorCount >= MAX_FATAL_ERRORS) {
+                console.error(`[Phase B AIMD] ABORT: ${MAX_FATAL_ERRORS} consecutive fatal errors`);
+                set({
+                  syncStatus: `❌ Aborted after ${MAX_FATAL_ERRORS} consecutive errors: ${error.message}`,
+                  error: `Fatal error: ${error.message}`,
+                  isProcessing: false
+                });
+                return false; // ABORT
               }
+              
+              // Retry with exponential backoff
+              const waitTime = Math.min(fatalErrorCount * 2, 10); // 2s, 4s, 6s, 8s, 10s
+              console.log(`[Phase B AIMD] Retrying after ${waitTime}s (attempt ${fatalErrorCount}/${MAX_FATAL_ERRORS})`);
               
               set({
-                syncStatus: `Rate limit hit. Waiting ${cappedWaitTime}s before retry... (Attempt ${rateLimitRetries})`
+                syncStatus: `⚠️ Error detected. Retrying in ${waitTime}s... (${fatalErrorCount}/${MAX_FATAL_ERRORS})`,
+                lastActivityTimestamp: Date.now()
               });
               
-              // 等待后自动重试
-              await new Promise(resolve => setTimeout(resolve, cappedWaitTime * 1000));
-              batchCount--;
+              await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+              batchCount--; // Retry current batch
               continue;
             }
             
-            // 如果是网络错误，尝试重试
-            if (error.message.includes('Failed to fetch') || 
-                error.message.includes('ERR_CONNECTION') || 
-                error.message.includes('NetworkError')) {
-              
-              retryCount++;
-              
-              if (retryCount <= maxRetries) {
-                const waitTime = retryCount * 1000; // 逐次增加等待时间
-                console.log(`[Phase B] Network error, retrying (${retryCount}/${maxRetries}) after ${waitTime}ms`);
-                
-                set({
-                  syncStatus: `Network error, retrying (${retryCount}/${maxRetries})...`
-                });
-                
-                // 等待后重试当前批次
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                batchCount--; // 重置批次计数器以重试当前批次
-                continue;
-              }
-            }
-            
-            // 重试次数超过或非网络错误，停止处理
+            // Unknown error - treat as fatal
+            console.error(`[Phase B AIMD] Unknown error type: ${error.message}`);
             set({
-              syncStatus: `Error: Batch ${batchCount} failed - ${error.message}`,
-              error: error.message
+              syncStatus: `❌ Fatal error: ${error.message}`,
+              error: error.message,
+              isProcessing: false
             });
-            return false; // 停止处理
+            return false; // ABORT
           }
         }
         
