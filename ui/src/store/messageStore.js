@@ -270,6 +270,10 @@ export const useMessageStore = create(
       const MAX_FATAL_ERRORS = 5; // Abort after 5 consecutive fatal errors
       let currentProcessingId = null; // Track current message ID for UI feedback
       
+      // SAFETY: Circuit breaker for consecutive errors
+      let consecutiveErrors = 0; // Track total consecutive errors (429, 500, network)
+      const MAX_CONSECUTIVE_ERRORS = 10; // Safety shutdown after 10 errors
+      
       // Get current channel ID for targeted processing
       const currentChannelId = useChannelStore.getState().selectedChannel?.id;
       console.log(`[Phase B SERIAL] Starting strict one-by-one processing for channel: ${currentChannelId}`);
@@ -284,13 +288,24 @@ export const useMessageStore = create(
             syncStatus: `Phase B: Processing item ${batchCount}...`
           });
           
+          // SAFETY: Circuit breaker check
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error(`[Phase B SERIAL] SAFETY SHUTDOWN: ${consecutiveErrors} consecutive errors exceeded limit of ${MAX_CONSECUTIVE_ERRORS}`);
+            set({
+              syncStatus: `🛑 Safety Shutdown: Too many errors (${consecutiveErrors}), stopping to protect Account/IP.`,
+              error: `Safety Shutdown: Too many errors, stopping to protect Account/IP.`,
+              isProcessing: false
+            });
+            throw new Error("Safety Shutdown: Too many errors, stopping to protect Account/IP.");
+          }
+          
           try {
             // Build URL with BATCH_SIZE = 1 (strict serial)
             const url = currentChannelId 
               ? `${PROCESSOR_URL}/process-media?batch=true&size=${BATCH_SIZE}&chatId=${currentChannelId}`
               : `${PROCESSOR_URL}/process-media?batch=true&size=${BATCH_SIZE}`;
             
-            console.log(`[Phase B SERIAL] Processing item ${batchCount} (one-by-one mode)`);
+            console.log(`[Phase B SERIAL] Processing item ${batchCount} (one-by-one mode, errors: ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
             const response = await internalFetch(url, {
               method: 'POST'
             });
@@ -306,9 +321,10 @@ export const useMessageStore = create(
               return false; // ABORT
             }
             
-            // === HANDLE 429 RATE LIMIT (NOT A FAILURE) ===
+            // === HANDLE 429 RATE LIMIT (COUNT AS ERROR FOR CIRCUIT BREAKER) ===
             if (response.status === 429) {
-              console.warn(`[Phase B SERIAL] Rate limit hit. Pausing...`);
+              consecutiveErrors++; // Increment consecutive errors for circuit breaker
+              console.warn(`[Phase B SERIAL] Rate limit hit (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}). Pausing...`);
               
               // Parse Retry-After header (priority) or response body
               let waitTime = 10; // Default 10s
@@ -330,7 +346,7 @@ export const useMessageStore = create(
               
               console.log(`[Phase B SERIAL] Cooling down for ${waitTime}s...`);
               set({
-                syncStatus: `⏸️ Rate Limited. Paused for ${waitTime}s...`,
+                syncStatus: `⏸️ Rate Limited. Paused for ${waitTime}s... (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS} errors)`,
                 lastActivityTimestamp: Date.now() // Update activity to prevent watchdog kill
               });
               
@@ -450,15 +466,20 @@ export const useMessageStore = create(
               syncStatus: statusMsg
             });
             
-            // Yield to UI thread: Allow render before next item
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // SUCCESS: Reset error counters
+            consecutiveErrors = 0;
+            fatalErrorCount = 0;
+            
+            // BREATHING INTERVAL: Human-like pause to prevent Cloudflare rate limiting
+            console.log(`[Phase B SERIAL] Breathing interval: 1000ms pause to prevent rate limiting`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
           } catch (error) {
-            console.error(`[Phase B SERIAL] FATAL ERROR in item ${batchCount}:`, error);
+            console.error(`[Phase B SERIAL] ERROR in item ${batchCount}:`, error);
             
-            // === FATAL ERROR HANDLING ===
-            // Only abort on: 500s, Network Errors after MAX_FATAL_ERRORS consecutive failures
-            fatalErrorCount++;
+            // === ERROR COUNTERS ===
+            consecutiveErrors++; // Increment total consecutive errors
+            fatalErrorCount++; // Increment fatal errors (for network/server errors)
             
             // Check if this is a recoverable error
             const isNetworkError = error.message.includes('Failed to fetch') || 
@@ -487,7 +508,7 @@ export const useMessageStore = create(
               console.log(`[Phase B SERIAL] Retrying after ${waitTime}s (attempt ${fatalErrorCount}/${MAX_FATAL_ERRORS})`);
               
               set({
-                syncStatus: `⚠️ Error detected. Retrying in ${waitTime}s... (${fatalErrorCount}/${MAX_FATAL_ERRORS})`,
+                syncStatus: `⚠️ Error detected. Retrying in ${waitTime}s... (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS} errors)`,
                 lastActivityTimestamp: Date.now()
               });
               
