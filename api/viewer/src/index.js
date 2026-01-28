@@ -164,29 +164,23 @@ app.get('/messages', async (c) => {
     
     const r2Url = r2PublicUrl?.value || '';
     
-    if (r2Url && messages.results && messages.results.length > 0) {
+    // CRITICAL FIX: Convert grouped_id to string to prevent BigInt precision loss
+    if (messages.results && messages.results.length > 0) {
       messages.results = messages.results.map(message => {
-        if (message.media_key) {
-          return {
-            ...message,
-            media_url: `${r2Url}/${message.media_key}`,
-            // Ensure both fields are available for frontend compatibility
-            r2_key: message.media_key
-          };
-        }
-        return {
+        const processedMessage = {
           ...message,
-          media_url: null,
-          r2_key: message.media_key || null
+          // Convert BigInt grouped_id to string to prevent precision loss
+          grouped_id: message.grouped_id ? String(message.grouped_id) : null,
+          // Ensure both fields are available for frontend compatibility
+          r2_key: message.media_key
         };
+        
+        if (message.media_key) {
+          processedMessage.media_url = `${r2Url}/${message.media_key}`;
+        }
+        
+        return processedMessage;
       });
-    } else if (messages.results && messages.results.length > 0) {
-      // Ensure media_url field exists even if R2_PUBLIC_URL is not set
-      messages.results = messages.results.map(message => ({
-        ...message,
-        media_url: message.media_key ? null : null,
-        r2_key: message.media_key || null
-      }));
     }
     
     // Debug: Log fetched data structure
