@@ -162,26 +162,39 @@ const MessageGallery = () => {
       isGroup: message.isGroup,
       messageId: message.telegram_message_id,
       grouped_id: message.grouped_id,
+      grouped_id_type: typeof message.grouped_id,
       index
     });
     
     // Check if this message has a grouped_id (Telegram album)
     if (message.grouped_id) {
       // Find ALL messages with the same grouped_id from the global messages list
-      const groupMessages = messages.filter(m => 
-        m.grouped_id === message.grouped_id && 
-        m.media_status === 'completed' && 
-        (m.media_key || m.r2_key || m.media_url)
-      );
+      // CRITICAL FIX: Use String() for type-safe comparison and only filter by media availability
+      const targetGroupId = String(message.grouped_id);
+      
+      const groupMessages = messages.filter(m => {
+        // Type-safe grouped_id comparison
+        const matchesGroup = String(m.grouped_id) === targetGroupId;
+        
+        // Only include messages with valid media (completed status)
+        // Allow completed items even if some siblings failed
+        const hasValidMedia = m.media_status === 'completed' && 
+                             (m.media_key || m.r2_key || m.media_url);
+        
+        return matchesGroup && hasValidMedia;
+      });
       
       // Sort them by telegram_message_id to maintain order
-      groupMessages.sort((a, b) => a.telegram_message_id - b.telegram_message_id);
+      groupMessages.sort((a, b) => Number(a.telegram_message_id) - Number(b.telegram_message_id));
       
       console.log('[MessageGallery] Found grouped images:', {
         grouped_id: message.grouped_id,
+        targetGroupId,
         totalInGroup: groupMessages.length,
+        allMessagesWithGroupId: messages.filter(m => String(m.grouped_id) === targetGroupId).length,
         groupMessages: groupMessages.map(m => ({
           id: m.telegram_message_id,
+          media_status: m.media_status,
           media_key: m.media_key,
           r2_key: m.r2_key,
           media_url: m.media_url,
@@ -192,8 +205,14 @@ const MessageGallery = () => {
       if (groupMessages.length > 0) {
         // Find the index of the currently clicked image
         const currentIndex = groupMessages.findIndex(m => 
-          m.telegram_message_id === message.telegram_message_id
+          Number(m.telegram_message_id) === Number(message.telegram_message_id)
         );
+        
+        console.log('[MessageGallery] Opening gallery with:', {
+          totalImages: groupMessages.length,
+          currentIndex: currentIndex >= 0 ? currentIndex : 0,
+          clickedMessageId: message.telegram_message_id
+        });
         
         setGalleryModal({
           isOpen: true,
@@ -201,7 +220,17 @@ const MessageGallery = () => {
           initialIndex: currentIndex >= 0 ? currentIndex : 0
         });
       } else {
-        console.warn('[MessageGallery] No completed media found for grouped_id:', message.grouped_id);
+        console.warn('[MessageGallery] No completed media found for grouped_id:', {
+          grouped_id: message.grouped_id,
+          targetGroupId,
+          totalMessagesInGroup: messages.filter(m => String(m.grouped_id) === targetGroupId).length,
+          messagesWithMedia: messages.filter(m => 
+            String(m.grouped_id) === targetGroupId && (m.media_key || m.r2_key || m.media_url)
+          ).length,
+          completedMessages: messages.filter(m => 
+            String(m.grouped_id) === targetGroupId && m.media_status === 'completed'
+          ).length
+        });
       }
     } else {
       const fileKey = message.r2_key || message.media_key || message.media?.r2_key;
