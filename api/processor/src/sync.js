@@ -51,7 +51,16 @@ export class ProcessorSyncService {
       }
 
       // Connect to Telegram with robust initialization
-      const client = await this.getClient();
+      console.log(`[Processor] Getting Telegram client...`);
+      let client;
+      try {
+        client = await this.getClient();
+        console.log(`[Processor] Client object created successfully`);
+      } catch (clientError) {
+        console.error(`[CRITICAL] Failed to create Telegram client:`, clientError);
+        throw new Error(`Failed to create Telegram client: ${clientError.message}`);
+      }
+      
       console.log(`[Processor] Initializing Telegram client connection...`);
       
       // Ensure client is properly connected with retry logic
@@ -60,14 +69,33 @@ export class ProcessorSyncService {
       
       while (connectionAttempts < maxConnectionAttempts) {
         try {
-          // 先断开连接再重新连接，确保连接状态清晰
-          try { await client.disconnect(); } catch (e) { /* 忽略断开错误 */ }
+          // First disconnect to ensure clean state
+          console.log(`[Processor] Disconnecting any existing connections...`);
+          try { 
+            await client.disconnect(); 
+            console.log(`[Processor] Successfully disconnected previous connection`);
+          } catch (disconnectError) { 
+            console.warn(`[Processor] Disconnect error (can be ignored):`, disconnectError.message); 
+          }
           
-          await client.connect();
+          // Attempt connection with timeout
+          console.log(`[Processor] Attempting to connect (attempt ${connectionAttempts + 1})...`);
+          const connectPromise = client.connect();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout after 15s')), 15000)
+          );
+          
+          await Promise.race([connectPromise, timeoutPromise]);
           console.log(`[Processor] Telegram client connected successfully (attempt ${connectionAttempts + 1})`);
           
-          // 验证连接状态
-          const self = await client.getMe();
+          // Verify connection with timeout
+          console.log(`[Processor] Verifying connection with getMe()...`);
+          const getMePromise = client.getMe();
+          const verifyTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('getMe verification timeout after 10s')), 10000)
+          );
+          
+          const self = await Promise.race([getMePromise, verifyTimeoutPromise]);
           if (self) {
             console.log(`[Processor] Connection verified - User: ${self.firstName || self.id}`);
             break;
@@ -76,14 +104,15 @@ export class ProcessorSyncService {
           }
         } catch (connError) {
           connectionAttempts++;
-          console.error(`[Processor] Connection attempt ${connectionAttempts} failed:`, connError.message);
+          console.error(`[CRITICAL] Connection attempt ${connectionAttempts} failed:`, connError.message);
+          console.error(`[CRITICAL] Error details:`, connError);
           
           if (connectionAttempts >= maxConnectionAttempts) {
             throw new Error(`Failed to establish Telegram connection after ${maxConnectionAttempts} attempts: ${connError.message}`);
           }
           
-          // 等待时间按指数增长，避免频繁重试
-          const waitTime = Math.min(1000 * Math.pow(2, connectionAttempts), 8000); // 指数退避，最长8秒
+          // Exponential backoff
+          const waitTime = Math.min(1000 * Math.pow(2, connectionAttempts), 8000); // Max 8 seconds
           console.log(`[Processor] Waiting ${waitTime}ms before next connection attempt`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }

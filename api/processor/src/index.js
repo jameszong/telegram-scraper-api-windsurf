@@ -514,6 +514,30 @@ app.get('/debug/credentials', async (c) => {
   }
 });
 
+// Safety Net: Wrap the entire fetch handler in a try-catch to prevent silent crashes
 export default {
-  fetch: app.fetch,
+  async fetch(request, env, ctx) {
+    try {
+      // Call the original Hono app fetch handler
+      return await app.fetch(request, env, ctx);
+    } catch (err) {
+      // Log the critical error
+      console.error(`[CRITICAL WORKER CRASH] ${err.message}`, err.stack);
+      
+      // Return a proper error response instead of crashing silently
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Critical Worker Crash",
+        details: err.message,
+        stack: err.stack,
+        timestamp: new Date().toISOString()
+      }), { 
+        status: 500,
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    }
+  }
 };
