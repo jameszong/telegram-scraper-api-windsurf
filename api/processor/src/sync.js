@@ -109,51 +109,78 @@ export class ProcessorSyncService {
       }
 
       const message = messages[0];
+      
+      // === STRICT LIGHTWEIGHT IMAGE FILTER (JPG/PNG < 300KB) ===
+      // This "Bouncer" logic prevents OOM crashes and timeouts
+      
+      // 1. Check if media exists
       if (!message.media) {
-        throw new Error(`Message ${pendingMessage.telegram_message_id} has no media`);
-      }
-
-      console.log(`[Processor] Downloading media for message ${message.id}, type: ${message.media.className}`);
-
-      // TURBO MODE: Photo-only processing with 20MB limit for high-res photos
-      if (!message.media.photo) {
-        console.log(`[Processor] Skipping non-photo media: ${message.media.className}`);
+        console.log(`[Filter] No media in message ${message.id}`);
         return {
           success: true,
           skipped: true,
-          reason: `Non-photo media type: ${message.media.className}`,
+          reason: "No media",
           mediaKey: null
         };
       }
 
-      const MAX_SIZE = 20 * 1024 * 1024; // 20MB for high-res photos
-      let fileSize = 0;
-      
-      // Only process photos, calculate max size from available variants
-      if (message.media.photo && message.media.photo.sizes) {
-        let maxSize = 0;
-        for (const size of message.media.photo.sizes) {
-          if (size.size) {
-            const sizeNum = Number(size.size);
-            if (sizeNum > maxSize) maxSize = sizeNum;
-          }
-        }
-        fileSize = maxSize;
-        console.log(`[Processor] Photo max size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
-      }
-      
-      if (fileSize > MAX_SIZE) {
-        console.log(`[Processor] Skipping photo ${message.id}: Size ${(fileSize / 1024 / 1024).toFixed(2)}MB > 20MB limit.`);
-        
+      console.log(`[Filter] Inspecting media for message ${message.id}, type: ${message.media.className}`);
+
+      // 2. Determine MIME type & size
+      let mimeType = '';
+      let size = 0;
+
+      if (message.media.document) {
+        // It's a file/document (video, PDF, etc.)
+        mimeType = message.media.document.mimeType || '';
+        size = message.media.document.size || 0;
+        console.log(`[Filter] Document detected: ${mimeType}, size: ${(size / 1024).toFixed(2)}KB`);
+      } else if (message.media.photo) {
+        // It's a compressed photo (Telegram photos are usually JPEGs)
+        mimeType = 'image/jpeg';
+        // Find the largest variant size (usually the last one in sizes array)
+        const sizes = message.media.photo.sizes || [];
+        const largest = sizes[sizes.length - 1];
+        size = largest && largest.size ? Number(largest.size) : 0;
+        console.log(`[Filter] Photo detected: ${mimeType}, size: ${(size / 1024).toFixed(2)}KB`);
+      } else {
+        // It's a GeoPoint, Contact, Game, Poll, etc. -> SKIP
+        console.log(`[Filter] Unsupported media type: ${message.media.className}`);
         return {
           success: true,
           skipped: true,
-          reason: `Photo size ${(fileSize / 1024 / 1024).toFixed(2)}MB exceeds 20MB limit`,
+          reason: `Unsupported media type: ${message.media.className}`,
           mediaKey: null
         };
       }
-      
-      console.log(`[Processor] Photo size check passed (${fileSize} bytes <= 20MB), proceeding with download`);
+
+      // 3. APPLY THE RULES: Only JPG/PNG < 300KB
+      const MAX_SIZE = 300 * 1024; // 300KB strict limit
+      const isImage = mimeType.includes('jpeg') || mimeType.includes('jpg') || mimeType.includes('png');
+      const isSmallEnough = size <= MAX_SIZE;
+
+      if (!isImage) {
+        console.log(`[Filter] REJECTED - Not an image: ${mimeType}`);
+        return {
+          success: true,
+          skipped: true,
+          reason: `Ignored Type: ${mimeType}`,
+          mediaKey: null
+        };
+      }
+
+      if (!isSmallEnough) {
+        console.log(`[Filter] REJECTED - Too large: ${(size / 1024).toFixed(2)}KB > 300KB`);
+        return {
+          success: true,
+          skipped: true,
+          reason: `Too Large: ${(size / 1024).toFixed(2)}KB`,
+          mediaKey: null
+        };
+      }
+
+      // 4. PASSED - Proceed to download
+      console.log(`[Filter PASSED] Downloading ${mimeType} (${(size / 1024).toFixed(2)}KB)...`);
 
       // TURBO MODE: Fast photo download without artificial delays
       const downloadPromise = client.downloadMedia(message, { workers: 1 });

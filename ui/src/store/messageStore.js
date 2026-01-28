@@ -386,14 +386,35 @@ export const useMessageStore = create(
                 // Update UI for single processed item
                 const { messages } = get();
                 const updatedMessages = messages.map(msg => {
-                  if (msg.telegram_message_id === singleData.messageId && singleData.mediaKey) {
-                    return {
-                      ...msg,
-                      media_status: 'completed',
-                      media_key: singleData.mediaKey,
-                      r2_key: singleData.mediaKey,
-                      media_url: `${VIEWER_URL}/media/${singleData.mediaKey}`
-                    };
+                  if (msg.telegram_message_id === singleData.messageId) {
+                    // Handle skipped items
+                    if (singleData.skipped) {
+                      const reason = singleData.skipReason || '';
+                      let skipStatus = 'skipped';
+                      
+                      if (reason.includes('Too Large')) {
+                        skipStatus = 'skipped_large';
+                      } else if (reason.includes('Ignored Type') || reason.includes('Non-photo') || reason.includes('Unsupported')) {
+                        skipStatus = 'skipped_type';
+                      }
+                      
+                      return {
+                        ...msg,
+                        media_status: skipStatus,
+                        skip_reason: reason
+                      };
+                    }
+                    
+                    // Handle completed items
+                    if (singleData.mediaKey) {
+                      return {
+                        ...msg,
+                        media_status: 'completed',
+                        media_key: singleData.mediaKey,
+                        r2_key: singleData.mediaKey,
+                        media_url: `${VIEWER_URL}/media/${singleData.mediaKey}`
+                      };
+                    }
                   }
                   return msg;
                 });
@@ -429,10 +450,25 @@ export const useMessageStore = create(
               const result = data.results?.find(r => r.messageId === msg.telegram_message_id);
               if (result && result.skipped) {
                 console.log(`[Phase B SERIAL] ⏭️ Message ${msg.telegram_message_id} skipped: ${result.skipReason}`);
+                
+                // Determine skip status based on reason
+                let skipStatus = 'skipped';
+                const reason = result.skipReason || '';
+                
+                if (reason.includes('Too Large')) {
+                  skipStatus = 'skipped_large'; // >300KB
+                } else if (reason.includes('Ignored Type')) {
+                  skipStatus = 'skipped_type'; // Video, PDF, etc.
+                } else if (reason.includes('Non-photo') || reason.includes('Unsupported')) {
+                  skipStatus = 'skipped_type'; // Non-image media
+                } else if (reason.includes('No media')) {
+                  skipStatus = 'skipped'; // No media at all
+                }
+                
                 return {
                   ...msg,
-                  media_status: result.skipReason?.includes('Non-photo') ? 'skipped_type' :
-                               result.skipReason?.includes('large') ? 'skipped_large' : 'skipped'
+                  media_status: skipStatus,
+                  skip_reason: reason // Store reason for UI display
                 };
               }
               
