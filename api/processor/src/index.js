@@ -390,10 +390,25 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
         // Mark as explicit failure
         console.error(`[Processor Batch] [Explicit Failure] Message ${pendingMessage.telegram_message_id}: ${result.error || 'Unknown error'}`);
         
-        // Update message status to failed in DB
-        await c.env.DB.prepare(`
-          UPDATE messages SET media_status = 'failed' WHERE id = ?
-        `).bind(String(pendingMessage.id)).run();
+        // Update message status to failed in DB with defensive error handling
+        try {
+          // Try to save the specific error message (requires error_message column)
+          await c.env.DB.prepare(`
+            UPDATE messages SET media_status = 'failed', error_message = ? WHERE id = ?
+          `).bind((result.error || 'Unknown error').substring(0, 255), String(pendingMessage.id)).run();
+          console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} to 'failed' with error message`);
+        } catch (dbError) {
+          console.error(`[Double Fault] Failed to save error to DB. Fallback to simple status update.`, dbError);
+          // Fallback: Update status WITHOUT error_message column if schema is still old
+          try {
+            await c.env.DB.prepare(`
+              UPDATE messages SET media_status = 'failed' WHERE id = ?
+            `).bind(String(pendingMessage.id)).run();
+            console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} to 'failed' (fallback)`);
+          } catch (fallbackError) {
+            console.error(`[Critical] Even fallback DB update failed:`, fallbackError);
+          }
+        }
         
         results.push({
           success: false,
@@ -404,14 +419,24 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
     } catch (error) {
       console.error(`[Processor Batch] Error processing item ${pendingMessage.telegram_message_id}:`, error);
       
-      // Update message status to failed in DB
+      // Update message status to failed in DB with defensive error handling
       try {
+        // Try to save the specific error message (requires error_message column)
         await c.env.DB.prepare(`
           UPDATE messages SET media_status = 'failed', error_message = ? WHERE id = ?
         `).bind(error.message.substring(0, 255), String(pendingMessage.id)).run();
-        console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} status to 'failed' in DB`);
+        console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} status to 'failed' with error message in DB`);
       } catch (dbError) {
-        console.error(`[Processor Batch] Failed to update message status in DB:`, dbError);
+        console.error(`[Double Fault] Failed to save error to DB. Fallback to simple status update.`, dbError);
+        // Fallback: Update status WITHOUT error_message column if schema is still old
+        try {
+          await c.env.DB.prepare(`
+            UPDATE messages SET media_status = 'failed' WHERE id = ?
+          `).bind(String(pendingMessage.id)).run();
+          console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} status to 'failed' (fallback) in DB`);
+        } catch (fallbackError) {
+          console.error(`[Critical] Even fallback DB update failed:`, fallbackError);
+        }
       }
       
       // Check for FloodWaitError
