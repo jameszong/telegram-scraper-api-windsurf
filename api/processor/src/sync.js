@@ -206,15 +206,17 @@ export class ProcessorSyncService {
       
       // CRITICAL: Verify buffer before uploading
       if (!buffer || buffer.length === 0) {
-        console.error(`[Processor] Downloaded empty buffer for message ${message.id}`);
-        return {
-          success: false,
-          error: 'Downloaded empty buffer',
-          mediaKey: null
-        };
+        console.error(`[Processor] [Download Failed] Buffer is empty for MsgID ${message.id}`);
+        throw new Error(`[Download Failed] Buffer is empty for MsgID ${message.id}`);
       }
       
-      console.log(`[Processor] Successfully downloaded media (${buffer.length} bytes)`);
+      // Validate buffer size is reasonable (at least 100 bytes for a minimal image)
+      if (buffer.length < 100) {
+        console.error(`[Processor] [Download Failed] Buffer too small (${buffer.length} bytes) for MsgID ${message.id}`);
+        throw new Error(`[Download Failed] Buffer too small (${buffer.length} bytes) for MsgID ${message.id}`);
+      }
+      
+      console.log(`[Data Stream] Downloaded ${buffer.length} bytes for MsgID ${message.id}`);
 
       // Generate R2 key
       const r2ChatIdStr = String(targetChannelId);
@@ -224,21 +226,25 @@ export class ProcessorSyncService {
 
       console.log(`[Processor] Uploading to R2: ${key}`);
 
-      // Upload to R2 with error handling
+      // Upload to R2 with error handling and validation
       try {
-        await this.env.BUCKET.put(key, buffer, {
+        // Capture the result of the R2 put operation
+        const r2Object = await this.env.BUCKET.put(key, buffer, {
           httpMetadata: {
             contentType: this.getContentType(message.media.className)
           }
         });
-        console.log(`[Processor] Successfully uploaded to R2: ${key}`);
+        
+        // Validate the R2 operation returned a valid object
+        if (!r2Object || !r2Object.key) {
+          console.error(`[Processor] [R2 Failed] Write operation returned null for ${key}`);
+          throw new Error(`[R2 Failed] Write operation returned null for ${key}`);
+        }
+        
+        console.log(`[R2 Success] Wrote ${buffer.length} bytes to ${r2Object.key}`);
       } catch (uploadError) {
         console.error(`[Processor] R2 upload failed for message ${message.id}:`, uploadError);
-        return {
-          success: false,
-          error: 'R2 upload failed: ' + uploadError.message,
-          mediaKey: null
-        };
+        throw new Error('R2 upload failed: ' + uploadError.message);
       }
 
       // Update database with media key and completed status
@@ -333,10 +339,29 @@ export class ProcessorSyncService {
     } catch (error) {
       console.error(`[Processor] Error processing media for message ${pendingMessage.telegram_message_id}:`, error);
       
-      return {
+      // Add detailed error information for debugging
+      const errorDetails = {
         success: false,
-        error: error.message
+        error: error.message,
+        errorType: error.name,
+        messageId: pendingMessage.telegram_message_id,
+        chatId: pendingMessage.chat_id,
+        mediaType: pendingMessage.media_type,
+        // Include stack trace in development only
+        stack: error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : null
       };
+      
+      console.error(`[Processor] [Error Details] ${JSON.stringify(errorDetails)}`);
+      
+      // Re-throw specific critical errors to prevent batch from continuing with false success
+      if (error.message.includes('[Download Failed]') || 
+          error.message.includes('[R2 Failed]') || 
+          error.message.includes('Buffer is empty') ||
+          error.message.includes('Buffer too small')) {
+        throw error; // Let the batch processor handle this
+      }
+      
+      return errorDetails;
     }
   }
 

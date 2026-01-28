@@ -337,6 +337,12 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
       // Process the media
       const result = await syncService.processMediaMessage(pendingMessage);
       
+      // CRITICAL: Validate result has required properties to prevent fake success
+      if (result.success && (!result.mediaKey || result.mediaKey.trim() === '')) {
+        console.error(`[Processor Batch] [FAKE SUCCESS DETECTED] Message ${pendingMessage.telegram_message_id} returned success but no mediaKey`);
+        throw new Error(`[Validation Failed] Success reported but no mediaKey for message ${pendingMessage.telegram_message_id}`);
+      }
+      
       // Handle skipped items
       if (result.skipped) {
         console.log(`[Processor Batch] Skipping message ${pendingMessage.telegram_message_id}: ${result.reason}`);
@@ -362,6 +368,12 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
           messageId: pendingMessage.telegram_message_id
         });
       } else if (result.success) {
+        // CRITICAL: Verify mediaKey exists and is valid before counting as success
+        if (!result.mediaKey) {
+          throw new Error(`[Validation Failed] Success reported but mediaKey is missing for message ${pendingMessage.telegram_message_id}`);
+        }
+        
+        console.log(`[Processor Batch] [Verified Success] Message ${pendingMessage.telegram_message_id} processed with mediaKey: ${result.mediaKey}`);
         processedCount++;
         results.push({
           success: true,
@@ -375,6 +387,14 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
           mediaType: pendingMessage.media_type
         });
       } else {
+        // Mark as explicit failure
+        console.error(`[Processor Batch] [Explicit Failure] Message ${pendingMessage.telegram_message_id}: ${result.error || 'Unknown error'}`);
+        
+        // Update message status to failed in DB
+        await c.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed' WHERE id = ?
+        `).bind(String(pendingMessage.id)).run();
+        
         results.push({
           success: false,
           error: result.error || 'Unknown processing error',
@@ -383,6 +403,16 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
       }
     } catch (error) {
       console.error(`[Processor Batch] Error processing item ${pendingMessage.telegram_message_id}:`, error);
+      
+      // Update message status to failed in DB
+      try {
+        await c.env.DB.prepare(`
+          UPDATE messages SET media_status = 'failed', error_message = ? WHERE id = ?
+        `).bind(error.message.substring(0, 255), String(pendingMessage.id)).run();
+        console.log(`[Processor Batch] Updated message ${pendingMessage.telegram_message_id} status to 'failed' in DB`);
+      } catch (dbError) {
+        console.error(`[Processor Batch] Failed to update message status in DB:`, dbError);
+      }
       
       // Check for FloodWaitError
       if (error.message && error.message.includes('FloodWaitError')) {
@@ -394,13 +424,29 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
           error: `FloodWaitError: Need to wait ${waitSeconds} seconds`,
           messageId: pendingMessage.telegram_message_id
         });
-      } else {
-        results.push({
-          success: false,
-          error: error.message,
-          messageId: pendingMessage.telegram_message_id
-        });
+        
+        // Break out of the loop to handle FloodWaitError at higher level
+        throw new Error(`FloodWaitError: Need to wait ${waitSeconds}s`);
       }
+      
+      // Handle specific data stream errors
+      const isDataStreamError = 
+        error.message.includes('[Download Failed]') || 
+        error.message.includes('[R2 Failed]') || 
+        error.message.includes('[Validation Failed]') ||
+        error.message.includes('Buffer is empty') ||
+        error.message.includes('Buffer too small');
+      
+      if (isDataStreamError) {
+        console.error(`[Processor Batch] [CRITICAL DATA STREAM ERROR] ${error.message}`);
+      }
+      
+      results.push({
+        success: false,
+        error: error.message,
+        errorType: isDataStreamError ? 'DATA_STREAM_ERROR' : 'PROCESSING_ERROR',
+        messageId: pendingMessage.telegram_message_id
+      });
     }
   }
   
