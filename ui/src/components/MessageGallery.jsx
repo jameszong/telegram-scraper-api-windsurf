@@ -96,18 +96,27 @@ const MessageGallery = () => {
         return (
           <span 
             className="text-orange-600 dark:text-orange-400 text-sm" 
-            title="File too large (>20MB)"
+            title="File too large (>300KB)"
           >
-            ⚠️ Too Large
+            🚫 Too Large
           </span>
         );
       case 'skipped_type':
         return (
           <span 
             className="text-purple-600 dark:text-purple-400 text-sm" 
-            title="Unsupported media type"
+            title="Not an image (video, document, etc.)"
           >
-            ⚠️ Unsupported
+            🚫 Not Image
+          </span>
+        );
+      case 'skipped':
+        return (
+          <span 
+            className="text-gray-600 dark:text-gray-400 text-sm" 
+            title="Skipped (no media or unsupported)"
+          >
+            🚫 Skipped
           </span>
         );
       case 'failed':
