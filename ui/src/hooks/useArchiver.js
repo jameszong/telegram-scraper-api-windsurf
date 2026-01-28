@@ -173,8 +173,8 @@ export const useArchiver = () => {
     try {
       let processedCount = 0;
       let batchCount = 0;
-      const batchSize = 5;
-      const maxBatches = 100;
+      const BATCH_SIZE = 1; // FORCED: Strict serial processing
+      const maxBatches = 1000; // Increased for infinite endurance
 
       while (batchCount < maxBatches) {
         batchCount++;
@@ -183,7 +183,7 @@ export const useArchiver = () => {
         setProcessing(true);
 
         try {
-          const response = await internalFetch(`${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${chatId}`, {
+          const response = await internalFetch(`${PROCESSOR_URL}/process-media?batch=true&size=${BATCH_SIZE}&chatId=${chatId}`, {
             method: 'POST'
           });
 
@@ -214,7 +214,8 @@ export const useArchiver = () => {
 
           // Live UI updates - immediately update messages state
           if (data.results && data.results.length > 0) {
-            const { messages: currentMessages } = useMessageStore.getState();
+            const { messages: currentMessages, setMessages: storeSetMessages } = useMessageStore.getState();
+            // CRITICAL: Create new array reference for React re-render detection
             const updatedMessages = currentMessages.map(msg => {
               const result = data.results.find(r => r.messageId === msg.telegram_message_id);
               if (result && result.success && !result.skipped && result.mediaKey) {
@@ -235,7 +236,10 @@ export const useArchiver = () => {
               }
               return msg;
             });
-            setMessages(updatedMessages);
+            storeSetMessages(updatedMessages);
+            
+            // CRITICAL: Pet the watchdog - update activity timestamp
+            useMessageStore.setState({ lastActivityTimestamp: Date.now() });
           }
 
           processedCount += Number(data.processedCount || 0);
@@ -249,8 +253,8 @@ export const useArchiver = () => {
 
           setSyncing(`Phase B: Processing media... ${remaining} remaining (Processed: ${processedCount})`);
 
-          // Wait before next batch
-          await new Promise(resolve => setTimeout(resolve, 800));
+          // Yield to UI thread
+          await new Promise(resolve => setTimeout(resolve, 500));
 
         } catch (error) {
           console.error(`[useArchiver] Batch ${batchCount} error:`, error);
