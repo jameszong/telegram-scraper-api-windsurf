@@ -153,7 +153,7 @@ app.get('/messages', async (c) => {
              m.media_key as r2_key  -- Add alias for frontend compatibility
       FROM messages m
       WHERE m.chat_id = ?
-      ORDER BY m.date DESC
+      ORDER BY m.date ASC
       LIMIT ? OFFSET ?
     `).bind(channelId, limit, offset).all();
 

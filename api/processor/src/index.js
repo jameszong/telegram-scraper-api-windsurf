@@ -227,7 +227,7 @@ async function processSingleMedia(c, syncService, chatId) {
   query += `
     ORDER BY 
       CASE WHEN media_status = 'pending' THEN 1 ELSE 2 END,
-      telegram_message_id DESC
+      telegram_message_id ASC
     LIMIT 1
   `;
   
@@ -320,7 +320,7 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
     query += `
       ORDER BY 
         CASE WHEN media_status = 'pending' THEN 1 ELSE 2 END,
-        telegram_message_id DESC
+        telegram_message_id ASC
       LIMIT 1
     `;
     

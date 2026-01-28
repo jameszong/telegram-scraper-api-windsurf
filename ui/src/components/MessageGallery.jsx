@@ -161,20 +161,26 @@ const MessageGallery = () => {
     console.log('[MessageGallery] Opening gallery modal:', {
       isGroup: message.isGroup,
       messageId: message.telegram_message_id,
+      grouped_id: message.grouped_id,
       index
     });
     
-    if (message.isGroup && message.media_group) {
-      // Filter media_group to only include completed items with media keys
-      const completedMedia = message.media_group.filter(m => {
-        const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
-        return m.media_status === 'completed' && (fileKey || m.media_url);
-      });
+    // Check if this message has a grouped_id (Telegram album)
+    if (message.grouped_id) {
+      // Find ALL messages with the same grouped_id from the global messages list
+      const groupMessages = messages.filter(m => 
+        m.grouped_id === message.grouped_id && 
+        m.media_status === 'completed' && 
+        (m.media_key || m.r2_key || m.media_url)
+      );
       
-      console.log('[MessageGallery] Group completed media:', {
-        totalInGroup: message.media_group.length,
-        completedCount: completedMedia.length,
-        completedMedia: completedMedia.map(m => ({
+      // Sort them by telegram_message_id to maintain order
+      groupMessages.sort((a, b) => a.telegram_message_id - b.telegram_message_id);
+      
+      console.log('[MessageGallery] Found grouped images:', {
+        grouped_id: message.grouped_id,
+        totalInGroup: groupMessages.length,
+        groupMessages: groupMessages.map(m => ({
           id: m.telegram_message_id,
           media_key: m.media_key,
           r2_key: m.r2_key,
@@ -183,14 +189,19 @@ const MessageGallery = () => {
         }))
       });
       
-      if (completedMedia.length > 0) {
+      if (groupMessages.length > 0) {
+        // Find the index of the currently clicked image
+        const currentIndex = groupMessages.findIndex(m => 
+          m.telegram_message_id === message.telegram_message_id
+        );
+        
         setGalleryModal({
           isOpen: true,
-          images: completedMedia,
-          initialIndex: index
+          images: groupMessages,
+          initialIndex: currentIndex >= 0 ? currentIndex : 0
         });
       } else {
-        console.warn('[MessageGallery] No completed media found in group');
+        console.warn('[MessageGallery] No completed media found for grouped_id:', message.grouped_id);
       }
     } else {
       const fileKey = message.r2_key || message.media_key || message.media?.r2_key;
