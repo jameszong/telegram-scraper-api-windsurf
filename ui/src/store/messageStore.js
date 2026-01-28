@@ -407,12 +407,19 @@ export const useMessageStore = create(
                     
                     // Handle completed items
                     if (singleData.mediaKey) {
+                      const isDryRun = singleData.mediaKey && singleData.mediaKey.includes('dry_run/');
+                      
+                      if (isDryRun) {
+                        console.warn(`[Phase B SERIAL] 🧪 Dry Run Success: Message ${msg.telegram_message_id} completed (simulated)`);
+                      }
+                      
                       return {
                         ...msg,
                         media_status: 'completed',
                         media_key: singleData.mediaKey,
                         r2_key: singleData.mediaKey,
-                        media_url: `${VIEWER_URL}/media/${singleData.mediaKey}`
+                        media_url: `${VIEWER_URL}/media/${singleData.mediaKey}`,
+                        is_dry_run: isDryRun
                       };
                     }
                   }
@@ -436,13 +443,23 @@ export const useMessageStore = create(
               
               if (processedItem && processedItem.media_key) {
                 currentProcessingId = processedItem.telegram_message_id; // Track for UI feedback
-                console.log(`[Phase B SERIAL] ✅ Message ${msg.telegram_message_id} completed with key ${processedItem.media_key}`);
+                
+                // Check if this is a dry run success
+                const isDryRun = processedItem.media_key && processedItem.media_key.includes('dry_run/');
+                
+                if (isDryRun) {
+                  console.warn(`[Phase B SERIAL] 🧪 Dry Run Success: Message ${msg.telegram_message_id} completed (simulated)`);
+                } else {
+                  console.log(`[Phase B SERIAL] ✅ Message ${msg.telegram_message_id} completed with key ${processedItem.media_key}`);
+                }
+                
                 return {
                   ...msg,
                   media_status: 'completed',
                   media_key: processedItem.media_key,
                   r2_key: processedItem.media_key,
-                  media_url: `${VIEWER_URL}/media/${processedItem.media_key}`
+                  media_url: `${VIEWER_URL}/media/${processedItem.media_key}`,
+                  is_dry_run: isDryRun // Add flag for UI differentiation
                 };
               }
               
