@@ -261,44 +261,43 @@ export const useMessageStore = create(
         error: null
       });
       
-      // AIMD (Additive Increase, Multiplicative Decrease) State
+      // STRICT SERIAL MODE: One-by-one processing
       let processedCount = 0;
       let batchCount = 0;
-      let batchSize = 1; // Start in Safe Mode
-      const MAX_BATCH_SIZE = 5; // Maximum batch size
+      const BATCH_SIZE = 1; // FORCED: Strict serial processing
       const maxBatches = 1000; // Increased for overnight runs
-      let consecutiveSuccesses = 0; // Track success streak for AIMD
       let fatalErrorCount = 0; // Track fatal errors (500s, network)
       const MAX_FATAL_ERRORS = 5; // Abort after 5 consecutive fatal errors
+      let currentProcessingId = null; // Track current message ID for UI feedback
       
       // Get current channel ID for targeted processing
       const currentChannelId = useChannelStore.getState().selectedChannel?.id;
-      console.log(`[Phase B AIMD] Starting with batchSize=1 for channel: ${currentChannelId}`);
+      console.log(`[Phase B SERIAL] Starting strict one-by-one processing for channel: ${currentChannelId}`);
       
-      // Resilient Loop with AIMD
+      // Strict Serial Loop: Download One -> Update UI -> Start Next
       const processAllMedia = async () => {
         while (batchCount < maxBatches) {
           batchCount++;
           
           set({
             syncProgress: batchCount,
-            syncStatus: `Phase B: Processing (Batch ${batchCount}, Size ${batchSize})...`
+            syncStatus: `Phase B: Processing item ${batchCount}...`
           });
           
           try {
-            // Build URL with current batch size
+            // Build URL with BATCH_SIZE = 1 (strict serial)
             const url = currentChannelId 
-              ? `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}&chatId=${currentChannelId}`
-              : `${PROCESSOR_URL}/process-media?batch=true&size=${batchSize}`;
+              ? `${PROCESSOR_URL}/process-media?batch=true&size=${BATCH_SIZE}&chatId=${currentChannelId}`
+              : `${PROCESSOR_URL}/process-media?batch=true&size=${BATCH_SIZE}`;
             
-            console.log(`[Phase B AIMD] Batch ${batchCount}: batchSize=${batchSize}, consecutiveSuccesses=${consecutiveSuccesses}`);
+            console.log(`[Phase B SERIAL] Processing item ${batchCount} (one-by-one mode)`);
             const response = await internalFetch(url, {
               method: 'POST'
             });
             
             // === HANDLE 401 UNAUTHORIZED ===
             if (response.status === 401) {
-              console.error('[Phase B AIMD] FATAL: HTTP 401 Unauthorized');
+              console.error('[Phase B SERIAL] FATAL: HTTP 401 Unauthorized');
               set({
                 syncStatus: 'Error: Telegram credentials missing. Please refresh the page.',
                 error: 'Telegram credentials missing',
@@ -309,11 +308,7 @@ export const useMessageStore = create(
             
             // === HANDLE 429 RATE LIMIT (NOT A FAILURE) ===
             if (response.status === 429) {
-              console.warn(`[Phase B AIMD] Rate limit hit. Applying AIMD: Multiplicative Decrease`);
-              
-              // AIMD: Multiplicative Decrease - Drop to batchSize = 1
-              batchSize = 1;
-              consecutiveSuccesses = 0; // Reset success counter
+              console.warn(`[Phase B SERIAL] Rate limit hit. Pausing...`);
               
               // Parse Retry-After header (priority) or response body
               let waitTime = 10; // Default 10s
@@ -321,21 +316,21 @@ export const useMessageStore = create(
               
               if (retryAfterHeader) {
                 waitTime = parseInt(retryAfterHeader, 10);
-                console.log(`[Phase B AIMD] Using Retry-After header: ${waitTime}s`);
+                console.log(`[Phase B SERIAL] Using Retry-After header: ${waitTime}s`);
               } else {
                 const data = await response.json().catch(() => ({}));
                 if (data.floodWait) {
                   waitTime = data.floodWait;
-                  console.log(`[Phase B AIMD] Using floodWait from body: ${waitTime}s`);
+                  console.log(`[Phase B SERIAL] Using floodWait from body: ${waitTime}s`);
                 }
               }
               
               // Add 1s buffer for safety
               waitTime += 1;
               
-              console.log(`[Phase B AIMD] Cooling down for ${waitTime}s... (batchSize reset to 1)`);
+              console.log(`[Phase B SERIAL] Cooling down for ${waitTime}s...`);
               set({
-                syncStatus: `⏸️ Rate Limited. Paused for ${waitTime}s... (Batch size reset to 1)`,
+                syncStatus: `⏸️ Rate Limited. Paused for ${waitTime}s...`,
                 lastActivityTimestamp: Date.now() // Update activity to prevent watchdog kill
               });
               
@@ -391,18 +386,10 @@ export const useMessageStore = create(
               return singleData?.remaining === 0; // Continue if more items
             }
             
-            // === SUCCESS: AIMD Additive Increase ===
-            consecutiveSuccesses++;
+            // === SUCCESS: Immediate UI Update ===
             fatalErrorCount = 0; // Reset fatal error counter on success
             
-            // AIMD: Additive Increase - Increase batch size by 1 after success
-            if (consecutiveSuccesses >= 2 && batchSize < MAX_BATCH_SIZE) {
-              batchSize++;
-              consecutiveSuccesses = 0; // Reset counter after increase
-              console.log(`[Phase B AIMD] Additive Increase: batchSize increased to ${batchSize}`);
-            }
-            
-            // OPTIMISTIC UI UPDATE: Use processedItems for instant updates
+            // STRICT SERIAL: Immediate UI update after each item
             const { messages } = get();
             const updatedMessages = messages.map(msg => {
               // First check processedItems array (optimistic update)
@@ -411,7 +398,8 @@ export const useMessageStore = create(
               );
               
               if (processedItem && processedItem.media_key) {
-                console.log(`[Phase B] OPTIMISTIC UPDATE: Message ${msg.telegram_message_id} completed with key ${processedItem.media_key}`);
+                currentProcessingId = processedItem.telegram_message_id; // Track for UI feedback
+                console.log(`[Phase B SERIAL] ✅ Message ${msg.telegram_message_id} completed with key ${processedItem.media_key}`);
                 return {
                   ...msg,
                   media_status: 'completed',
@@ -424,6 +412,7 @@ export const useMessageStore = create(
               // Fallback to results array for skipped items
               const result = data.results?.find(r => r.messageId === msg.telegram_message_id);
               if (result && result.skipped) {
+                console.log(`[Phase B SERIAL] ⏭️ Message ${msg.telegram_message_id} skipped: ${result.skipReason}`);
                 return {
                   ...msg,
                   media_status: result.skipReason?.includes('Non-photo') ? 'skipped_type' :
@@ -433,7 +422,12 @@ export const useMessageStore = create(
               
               return msg;
             });
-            set({ messages: updatedMessages });
+            
+            // IMMEDIATE STATE UPDATE: Trigger UI refresh
+            set({ 
+              messages: updatedMessages,
+              lastActivityTimestamp: Date.now() // Pet the watchdog on every success
+            });
             
             processedCount += Number(data.processedCount || 0);
             const remaining = Number(data.remaining || 0);
@@ -447,20 +441,24 @@ export const useMessageStore = create(
               return false; // Stop processing
             }
             
+            // Visual feedback with current processing ID
+            const statusMsg = currentProcessingId 
+              ? `Phase B: Processing ID ${currentProcessingId}... (${remaining} remaining, ${processedCount} done)`
+              : `Phase B: Processing... ${remaining} remaining (${processedCount} done)`;
+            
             set({
-              syncStatus: `Phase B: Processing... ${remaining} remaining (Processed: ${processedCount}, Batch Size: ${batchSize})`
+              syncStatus: statusMsg
             });
             
-            // Small delay between batches
+            // Yield to UI thread: Allow render before next item
             await new Promise(resolve => setTimeout(resolve, 500));
             
           } catch (error) {
-            console.error(`[Phase B AIMD] FATAL ERROR in batch ${batchCount}:`, error);
+            console.error(`[Phase B SERIAL] FATAL ERROR in item ${batchCount}:`, error);
             
             // === FATAL ERROR HANDLING ===
             // Only abort on: 500s, Network Errors after MAX_FATAL_ERRORS consecutive failures
             fatalErrorCount++;
-            consecutiveSuccesses = 0; // Reset success counter
             
             // Check if this is a recoverable error
             const isNetworkError = error.message.includes('Failed to fetch') || 
@@ -472,10 +470,10 @@ export const useMessageStore = create(
             const isServerError = error.message.includes('HTTP 5');
             
             if (isNetworkError || isServerError) {
-              console.warn(`[Phase B AIMD] Recoverable error (${fatalErrorCount}/${MAX_FATAL_ERRORS}): ${error.message}`);
+              console.warn(`[Phase B SERIAL] Recoverable error (${fatalErrorCount}/${MAX_FATAL_ERRORS}): ${error.message}`);
               
               if (fatalErrorCount >= MAX_FATAL_ERRORS) {
-                console.error(`[Phase B AIMD] ABORT: ${MAX_FATAL_ERRORS} consecutive fatal errors`);
+                console.error(`[Phase B SERIAL] ABORT: ${MAX_FATAL_ERRORS} consecutive fatal errors`);
                 set({
                   syncStatus: `❌ Aborted after ${MAX_FATAL_ERRORS} consecutive errors: ${error.message}`,
                   error: `Fatal error: ${error.message}`,
@@ -486,7 +484,7 @@ export const useMessageStore = create(
               
               // Retry with exponential backoff
               const waitTime = Math.min(fatalErrorCount * 2, 10); // 2s, 4s, 6s, 8s, 10s
-              console.log(`[Phase B AIMD] Retrying after ${waitTime}s (attempt ${fatalErrorCount}/${MAX_FATAL_ERRORS})`);
+              console.log(`[Phase B SERIAL] Retrying after ${waitTime}s (attempt ${fatalErrorCount}/${MAX_FATAL_ERRORS})`);
               
               set({
                 syncStatus: `⚠️ Error detected. Retrying in ${waitTime}s... (${fatalErrorCount}/${MAX_FATAL_ERRORS})`,
@@ -494,12 +492,12 @@ export const useMessageStore = create(
               });
               
               await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-              batchCount--; // Retry current batch
+              batchCount--; // Retry current item
               continue;
             }
             
             // Unknown error - treat as fatal
-            console.error(`[Phase B AIMD] Unknown error type: ${error.message}`);
+            console.error(`[Phase B SERIAL] Unknown error type: ${error.message}`);
             set({
               syncStatus: `❌ Fatal error: ${error.message}`,
               error: error.message,
