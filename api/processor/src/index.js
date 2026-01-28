@@ -357,9 +357,13 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
         processedCount++;
         results.push({
           success: true,
+          id: String(pendingMessage.telegram_message_id), // Use telegram_message_id as frontend key
           processedId: Number(pendingMessage.id),
           messageId: pendingMessage.telegram_message_id,
-          mediaKey: result.mediaKey,
+          chatId: pendingMessage.chat_id,
+          media_key: result.mediaKey, // Match DB field name
+          media_status: 'completed', // Explicit status for optimistic update
+          mediaKey: result.mediaKey, // Keep for backward compatibility
           mediaType: pendingMessage.media_type
         });
       } else {
@@ -412,6 +416,17 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
 
   console.log(`[Processor Batch] Completed: ${processedCount} processed, ${skippedCount} skipped, ${remainingCount.count} remaining`);
   
+  // Extract processedItems for optimistic UI updates
+  const processedItems = results
+    .filter(r => r.success && !r.skipped && r.media_key)
+    .map(r => ({
+      id: r.id,
+      telegram_message_id: r.messageId,
+      chat_id: r.chatId,
+      media_key: r.media_key,
+      media_status: r.media_status
+    }));
+  
   return c.json({
     success: true,
     batchMode: true,
@@ -420,7 +435,8 @@ async function processBatchMedia(c, syncService, batchSize, chatId) {
     skippedCount: skippedCount,
     remaining: remainingCount.count,
     hasMore: remainingCount.count > 0,
-    results: results
+    processedItems: processedItems, // For optimistic UI updates
+    results: results // Keep full results for debugging
   });
 }
 

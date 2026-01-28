@@ -331,16 +331,26 @@ export const useArchiver = () => {
     };
   }, [isProcessing, isSyncing, startPolling]);
 
-  // CRITICAL: Stale check for isProcessing state
+  // CRITICAL: Activity-based watchdog for isProcessing state
   useEffect(() => {
     if (isProcessing) {
-      const staleTimer = setTimeout(() => {
-        console.warn('[useArchiver] isProcessing stuck for 60s, forcing reset');
-        const { setProcessing } = useMessageStore.getState();
-        setProcessing(false);
-      }, 60000); // 增加到 60 秒以适应较慢的 R2 上传
+      const watchdogInterval = setInterval(() => {
+        const { lastActivityTimestamp, setProcessing } = useMessageStore.getState();
+        
+        if (lastActivityTimestamp) {
+          const inactiveDuration = Date.now() - lastActivityTimestamp;
+          
+          // Only kill if no activity for 60 seconds
+          if (inactiveDuration > 60000) {
+            console.warn(`[useArchiver] No activity for ${Math.floor(inactiveDuration / 1000)}s, forcing reset`);
+            setProcessing(false);
+          } else {
+            console.log(`[useArchiver] Watchdog check: last activity ${Math.floor(inactiveDuration / 1000)}s ago`);
+          }
+        }
+      }, 10000); // Check every 10 seconds
 
-      return () => clearTimeout(staleTimer);
+      return () => clearInterval(watchdogInterval);
     }
   }, [isProcessing]);
 

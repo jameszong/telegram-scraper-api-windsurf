@@ -11,6 +11,7 @@ export const useMessageStore = create(
   isLoading: false,
   isSyncing: false,
   isProcessing: false, // Add processing state for polling
+  lastActivityTimestamp: null, // Track last successful activity for watchdog
   syncProgress: 0,  // Add sync progress tracking
   syncStatus: '',   // Add sync status message
   error: null,
@@ -25,6 +26,7 @@ export const useMessageStore = create(
   },
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setProcessing: (processing) => set({ isProcessing: processing }),
+  updateActivity: () => set({ lastActivityTimestamp: Date.now() }), // Update activity timestamp
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
   
@@ -255,6 +257,7 @@ export const useMessageStore = create(
       set({ 
         syncStatus: 'Phase B: Processing media queue...',
         isProcessing: true,
+        lastActivityTimestamp: Date.now(), // Initialize activity timestamp
         error: null
       });
       
@@ -358,6 +361,9 @@ export const useMessageStore = create(
             const data = await response.json();
             console.log(`[Phase B] Batch ${batchCount} response:`, data);
             
+            // Update activity timestamp on successful response
+            set({ lastActivityTimestamp: Date.now() });
+            
             if (!data || !data.success) {
               throw new Error(data?.error || 'Batch processing failed');
             }
@@ -394,26 +400,35 @@ export const useMessageStore = create(
               return singleData?.remaining === 0; // Continue if more items
             }
             
-            // Update local messages state for batch results
+            // OPTIMISTIC UI UPDATE: Use processedItems for instant updates
             const { messages } = get();
             const updatedMessages = messages.map(msg => {
-              const result = data.results?.find(r => r.messageId === msg.telegram_message_id);
-              if (result && result.success && !result.skipped && result.mediaKey) {
-                console.log(`[Phase B] Live update: Message ${msg.telegram_message_id} completed`);
+              // First check processedItems array (optimistic update)
+              const processedItem = data.processedItems?.find(
+                item => String(item.telegram_message_id) === String(msg.telegram_message_id)
+              );
+              
+              if (processedItem && processedItem.media_key) {
+                console.log(`[Phase B] OPTIMISTIC UPDATE: Message ${msg.telegram_message_id} completed with key ${processedItem.media_key}`);
                 return {
                   ...msg,
                   media_status: 'completed',
-                  media_key: result.mediaKey,
-                  r2_key: result.mediaKey,
-                  media_url: `${VIEWER_URL}/media/${result.mediaKey}`
+                  media_key: processedItem.media_key,
+                  r2_key: processedItem.media_key,
+                  media_url: `${VIEWER_URL}/media/${processedItem.media_key}`
                 };
-              } else if (result && result.skipped) {
+              }
+              
+              // Fallback to results array for skipped items
+              const result = data.results?.find(r => r.messageId === msg.telegram_message_id);
+              if (result && result.skipped) {
                 return {
                   ...msg,
                   media_status: result.skipReason?.includes('Non-photo') ? 'skipped_type' :
                                result.skipReason?.includes('large') ? 'skipped_large' : 'skipped'
                 };
               }
+              
               return msg;
             });
             set({ messages: updatedMessages });
