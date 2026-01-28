@@ -9,6 +9,16 @@ const groupMessages = (messages) => {
   
   console.log(`[useArchiver] Processing ${messages.length} messages for grouping`);
   
+  // CRITICAL DEBUG: Log grouped_id values to diagnose grouping issues
+  const groupedIdCounts = {};
+  messages.forEach(msg => {
+    if (msg.grouped_id) {
+      groupedIdCounts[msg.grouped_id] = (groupedIdCounts[msg.grouped_id] || 0) + 1;
+    }
+  });
+  
+  console.log('[useArchiver] Grouped ID distribution:', groupedIdCounts);
+  
   const groups = {};
   const result = [];
   let groupCount = 0;

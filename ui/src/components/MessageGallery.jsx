@@ -13,10 +13,18 @@ const MessageGallery = () => {
     fetchMessages 
   } = useMessageStore();
   const { selectedChannel, channels } = useChannelStore();
-  const { isProcessing, isSyncing, syncStatus, startSync, triggerPendingMedia, triggerTargetedProcessing } = useArchiver();
+  const { 
+    messages, // This is already grouped messages from useArchiver
+    isProcessing, 
+    isSyncing, 
+    syncStatus, 
+    startSync, 
+    triggerPendingMedia, 
+    triggerTargetedProcessing 
+  } = useArchiver();
   
-  // CRITICAL FIX: Get fresh messages directly from store to avoid stale closure
-  const messages = useMessageStore(state => state.messages);
+  // CRITICAL FIX: Get raw messages for gallery modal search (not grouped ones)
+  const rawMessages = useMessageStore(state => state.messages);
   
   const [selectedImage, setSelectedImage] = useState(null);
   const [galleryModal, setGalleryModal] = useState({ isOpen: false, images: [], initialIndex: 0 });
@@ -169,8 +177,8 @@ const MessageGallery = () => {
       index
     });
     
-    // CRITICAL FIX: Get fresh state directly from store to avoid stale closure
-    const allMessages = useMessageStore.getState().messages;
+    // CRITICAL FIX: Use raw messages for searching grouped siblings (not grouped display messages)
+    const allMessages = rawMessages;
     
     console.log(`[Gallery Debug] Searching in ${allMessages.length} total messages for GroupID: ${message.grouped_id}`);
     
