@@ -226,17 +226,33 @@ const MessageGallery = () => {
       // CRITICAL FIX: Force String comparison to defend against BigInt precision loss
       const targetGroupId = String(message.grouped_id);
       
-      const groupMessages = allMessages.filter(m => {
-        // Strict String conversion on BOTH sides to handle BigInt precision loss
+      // ROBUST FILTER: Trust media_key existence over media_status
+      // Reason: Legacy data may have media_key but stuck status
+      const allSiblings = allMessages.filter(m => {
         const mGroup = String(m.grouped_id || '');
-        const matchesGroup = mGroup === targetGroupId;
+        return mGroup === targetGroupId;
+      });
+      
+      // Log sibling statuses for debugging
+      console.log('[Gallery Debug] Sibling statuses:', {
+        totalSiblings: allSiblings.length,
+        statuses: allSiblings.map(s => ({
+          id: s.telegram_message_id,
+          status: s.media_status,
+          has_media_key: !!(s.media_key || s.r2_key),
+          media_key: s.media_key,
+          r2_key: s.r2_key
+        }))
+      });
+      
+      const groupMessages = allSiblings.filter(m => {
+        // CRITICAL: Trust media_key existence, not status
+        // If media_key exists, the image IS in R2
+        const hasValidMedia = (m.media_key && m.media_key.length > 0) || 
+                             (m.r2_key && m.r2_key.length > 0) || 
+                             (m.media_url && m.media_url.length > 0);
         
-        // Only include messages with valid media (completed status)
-        // Allow completed items even if some siblings failed
-        const hasValidMedia = m.media_status === 'completed' && 
-                             (m.media_key || m.r2_key || m.media_url);
-        
-        return matchesGroup && hasValidMedia;
+        return hasValidMedia;
       });
       
       // Sort them by telegram_message_id to maintain order
@@ -363,25 +379,25 @@ const MessageGallery = () => {
         return siblingGroupIdStr === groupedIdStr;
       });
       
-      // Aggregate completed media from all siblings
+      // Aggregate media from all siblings - ROBUST FILTER
       let totalCompletedCount = 0;
       let totalMediaCount = 0;
       
       siblingMessages.forEach(sibling => {
         if (sibling.media_group && Array.isArray(sibling.media_group)) {
           totalMediaCount += sibling.media_group.length;
+          // ROBUST: Trust media_key existence over status
           const completedInSibling = sibling.media_group.filter(m => {
             const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
-            return m.media_status === 'completed' && (fileKey || m.media_url);
+            return fileKey && fileKey.length > 0;
           });
           totalCompletedCount += completedInSibling.length;
         } else if (sibling.media_status !== 'none' && sibling.media_status !== null) {
           totalMediaCount += 1;
-          if (sibling.media_status === 'completed') {
-            const fileKey = sibling.media_key || sibling.r2_key || sibling.media?.r2_key || sibling.media?.media_key;
-            if (fileKey || sibling.media_url) {
-              totalCompletedCount += 1;
-            }
+          // ROBUST: Trust media_key existence over status
+          const fileKey = sibling.media_key || sibling.r2_key || sibling.media?.r2_key || sibling.media?.media_key;
+          if (fileKey && fileKey.length > 0) {
+            totalCompletedCount += 1;
           }
         }
       });
