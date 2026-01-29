@@ -150,20 +150,20 @@ export const useMessageStore = create(
     set({ isSyncing: true, syncProgress: 0, syncStatus: 'Starting sync...', error: null });
     
     try {
-      // Phase A: Fast Text Sync
-      const { phaseATextSync, phaseBMediaProcessing } = get();
+      // Phase A: Fast Text Sync ONLY (ON-DEMAND architecture)
+      const { phaseATextSync } = get();
       await phaseATextSync();
       
-      // Phase B: Media Processing Queue
-      await phaseBMediaProcessing();
+      // REMOVED: Phase B auto-processing (now on-demand via user clicks)
+      // Users will click "📥 点击下载" to download specific images
       
-      // Final refresh to show completed media
+      // Final refresh to show synced messages
       const { fetchMessages } = get();
       await fetchMessages(50, true);
       
       set({ 
         isSyncing: false, 
-        syncStatus: 'Sync complete! All messages and media processed.' 
+        syncStatus: 'Sync complete! Messages synced. Click images to download.' 
       });
       
     } catch (error) {
