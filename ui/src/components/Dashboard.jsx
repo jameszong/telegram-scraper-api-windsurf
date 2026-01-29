@@ -44,13 +44,16 @@ export const Dashboard = () => {
     initializeFromStorage();
   }, [channels, initializeFromStorage]);
 
-  // CRITICAL: Trigger fetchMessages when switching to Archive tab
+  // CRITICAL: Auto-sync 10 messages when entering Archive tab
   useEffect(() => {
     if (activeTab === 'archive' && selectedChannel) {
-      console.log('[Dashboard] Switched to Archive tab, fetching messages for channel:', selectedChannel.id);
-      fetchMessages(50, true, selectedChannel.id);
+      console.log('[Dashboard] Switched to Archive tab, auto-syncing 10 messages for channel:', selectedChannel.id);
+      // First sync metadata (Phase A) for 10 messages
+      syncMessages();
+      // Then fetch the messages to display
+      fetchMessages(10, true, selectedChannel.id);
     }
-  }, [activeTab, selectedChannel, fetchMessages]);
+  }, [activeTab, selectedChannel, syncMessages, fetchMessages]);
   
   const handleSync = async () => {
     if (!selectedChannel) return;
@@ -86,52 +89,6 @@ export const Dashboard = () => {
             </div>
             
             <div className="flex items-center gap-4">
-              {selectedChannel && (
-                <div className="flex items-center gap-2">
-                  <Button 
-                    onClick={handleSync} 
-                    disabled={isSyncing}
-                    variant="outline"
-                  >
-                    {isSyncing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {syncProgress > 0 ? `${syncProgress}/10` : 'Syncing...'}
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Sync Now
-                      </>
-                    )}
-                  </Button>
-                  
-                  <Button 
-                    onClick={phaseBMediaProcessing} 
-                    disabled={isProcessing}
-                    variant="default"
-                  >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <Image className="w-4 h-4 mr-2" />
-                        Process Images
-                      </>
-                    )}
-                  </Button>
-                  
-                  {syncStatus && (
-                    <span className="text-sm text-muted-foreground">
-                      {syncStatus}
-                    </span>
-                  )}
-                </div>
-              )}
-              
               <Button onClick={handleLogout} variant="ghost">
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout

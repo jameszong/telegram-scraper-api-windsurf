@@ -143,20 +143,31 @@ const MessageGallery = () => {
     }
   };
 
-  // Handle load more functionality
-  const handleLoadMore = async () => {
-    if (!selectedChannel || loadingMore || isLoading) return;
+  // Handle pagination - Next page
+  const handleNextPage = async () => {
+    if (!selectedChannel || loadingMore || isLoading || !hasMore) return;
     
-    console.log('[MessageGallery] Loading more messages for channel:', selectedChannel.id);
+    console.log('[MessageGallery] Loading next page for channel:', selectedChannel.id);
     
     try {
       setLoadingMore(true);
-      await fetchMessages(50, false, selectedChannel.id); // Don't reset, just append
+      // Sync next 10 messages first
+      const { syncMessages } = useMessageStore.getState();
+      await syncMessages();
+      // Then fetch them
+      await fetchMessages(10, false, selectedChannel.id); // Append next 10
     } catch (error) {
-      console.error('[MessageGallery] Error loading more messages:', error);
+      console.error('[MessageGallery] Error loading next page:', error);
     } finally {
       setLoadingMore(false);
     }
+  };
+  
+  // Handle pagination - Previous page
+  const handlePreviousPage = () => {
+    // For now, we'll just show a message that previous page is not supported
+    // In a real implementation, you'd need to track page state
+    console.log('[MessageGallery] Previous page not implemented yet');
   };
 
   // ON-DEMAND: Download media for a specific message
@@ -703,27 +714,29 @@ const MessageGallery = () => {
         </tbody>
       </table>
 
-      {/* Load More Button */}
-      {hasMore && !isLoading && validMessages.length > 0 && (
+      {/* Pagination Controls */}
+      {validMessages.length > 0 && (
         <div className="p-4 text-center border-t">
-          <button
-            onClick={handleLoadMore}
-            disabled={loadingMore}
-            className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            {loadingMore ? (
-              <>
-                <span className="inline-block animate-spin mr-2">⏳</span>
-                Loading...
-              </>
-            ) : (
-              <>
-                📄 Load More Messages
-              </>
-            )}
-          </button>
+          <div className="flex items-center justify-center gap-4">
+            <button
+              onClick={handleNextPage}
+              disabled={loadingMore || isLoading || !hasMore}
+              className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {loadingMore ? (
+                <>
+                  <span className="inline-block animate-spin mr-2">⏳</span>
+                  加载中...
+                </>
+              ) : (
+                <>
+                  下一页 (10条) →
+                </>
+              )}
+            </button>
+          </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Showing {validMessages.length} messages
+            当前显示 {validMessages.length} 条消息 {hasMore ? '· 点击下一页加载更多' : '· 已全部加载'}
           </p>
         </div>
       )}
