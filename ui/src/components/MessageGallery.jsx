@@ -314,55 +314,76 @@ const MessageGallery = () => {
         media_group: msg.media_group
       });
       
-      // Targeted debugging: Check if media_group items have the expected fields
-      if (msg.media_group && msg.media_group.length > 0) {
-        const firstMedia = msg.media_group[0];
-        console.log('[MessageGallery] First media item in group:', {
-          messageId: firstMedia.telegram_message_id,
-          media_status: firstMedia.media_status,
-          media_key: firstMedia.media_key,
-          media_url: firstMedia.media_url,
-          allAvailableKeys: Object.keys(firstMedia),
-          // Check for alternative field names
-          r2_key: firstMedia.r2_key,
-          mediaKey: firstMedia.mediaKey,
-          r2Key: firstMedia.r2Key
-        });
-        
-        if (!firstMedia.media_key && !firstMedia.media_url) {
-          // 只在非 pending 状态时警告，因为 pending 状态下缺少 media_key 是正常的
-          if (firstMedia.media_status !== 'pending') {
-            console.warn(`[MessageGallery] Missing media fields in group ${msg.grouped_id}. Available keys:`, Object.keys(firstMedia));
-          }
-        }
-      }
+      // CRITICAL FIX: Count completed media across ALL sibling messages with the same grouped_id
+      const allMessages = rawMessages;
+      const groupedIdStr = String(msg.grouped_id); // BigInt safety: cast to string
       
-      const completedCount = msg.media_group.filter(m => {
-        const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
-        return m.media_status === 'completed' && (fileKey || m.media_url);
-      }).length;
-      const totalCount = msg.media_group.length;
-      
-      console.log('[MessageGallery] Group media status:', {
-        completedCount,
-        totalCount,
-        hasCompletedMedia: completedCount > 0
+      // Find all messages with the same grouped_id
+      const siblingMessages = allMessages.filter(sibling => {
+        const siblingGroupIdStr = String(sibling.grouped_id || '');
+        return siblingGroupIdStr === groupedIdStr;
       });
       
-      if (completedCount > 0) {
+      // Aggregate completed media from all siblings
+      let totalCompletedCount = 0;
+      let totalMediaCount = 0;
+      
+      siblingMessages.forEach(sibling => {
+        if (sibling.media_group && Array.isArray(sibling.media_group)) {
+          totalMediaCount += sibling.media_group.length;
+          const completedInSibling = sibling.media_group.filter(m => {
+            const fileKey = m.media_key || m.r2_key || m.media?.r2_key || m.media?.media_key;
+            return m.media_status === 'completed' && (fileKey || m.media_url);
+          });
+          totalCompletedCount += completedInSibling.length;
+        } else if (sibling.media_status !== 'none' && sibling.media_status !== null) {
+          totalMediaCount += 1;
+          if (sibling.media_status === 'completed') {
+            const fileKey = sibling.media_key || sibling.r2_key || sibling.media?.r2_key || sibling.media?.media_key;
+            if (fileKey || sibling.media_url) {
+              totalCompletedCount += 1;
+            }
+          }
+        }
+      });
+      
+      console.log('[MessageGallery] Group media aggregation:', {
+        groupedId: groupedIdStr,
+        siblingMessages: siblingMessages.length,
+        totalMediaCount,
+        totalCompletedCount,
+        hasCompletedMedia: totalCompletedCount > 0
+      });
+      
+      if (totalCompletedCount > 0) {
         return (
           <button
             onClick={() => openGalleryModal(msg, 0)}
             className="px-3 py-1 text-sm text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
           >
-            🖼️ {completedCount}/{totalCount} Images
+            🖼️ {totalCompletedCount}/{totalMediaCount} Images
           </button>
         );
       } else {
-        // Show processing status for the group
-        const firstMedia = msg.media_group.find(m => m.media_status === 'pending' || m.media_status === 'processing');
-        if (firstMedia) {
-          return renderMediaStatus(firstMedia.media_status);
+        // Show processing status for the group - check any sibling for status
+        let statusToShow = null;
+        for (const sibling of siblingMessages) {
+          if (sibling.media_group && Array.isArray(sibling.media_group)) {
+            const firstPending = sibling.media_group.find(m => 
+              m.media_status === 'pending' || m.media_status === 'processing'
+            );
+            if (firstPending) {
+              statusToShow = firstPending.media_status;
+              break;
+            }
+          } else if (sibling.media_status === 'pending' || sibling.media_status === 'processing') {
+            statusToShow = sibling.media_status;
+            break;
+          }
+        }
+        
+        if (statusToShow) {
+          return renderMediaStatus(statusToShow);
         }
         return <span className="text-gray-300 dark:text-gray-600">-</span>;
       }
