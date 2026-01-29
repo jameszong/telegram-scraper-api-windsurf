@@ -13,6 +13,21 @@ export class ProcessorSyncService {
   constructor(env) {
     this.env = env;
     this.authService = new ProcessorAuthService(env);
+    this.lastProcessTime = 0; // Track last processing time for throttling
+  }
+
+  // Helper: Add delay to prevent Telegram FloodWait
+  async addDelay(ms = 2000) {
+    const now = Date.now();
+    const timeSinceLastProcess = now - this.lastProcessTime;
+    
+    if (timeSinceLastProcess < ms) {
+      const waitTime = ms - timeSinceLastProcess;
+      console.log(`[Processor] Throttling: waiting ${waitTime}ms to prevent FloodWait`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    this.lastProcessTime = Date.now();
   }
 
   async getTargetChannel() {
@@ -40,6 +55,9 @@ export class ProcessorSyncService {
   async processMediaMessage(pendingMessage) {
     // 添加详细日志以追踪消息处理
     console.log(`[Processor] Starting media processing for message ${pendingMessage.telegram_message_id} with detailed logging`);
+    
+    // CRITICAL: Add delay to prevent Telegram FloodWait (429)
+    await this.addDelay(2000);
     
     try {
       console.log(`[Processor] Starting media processing for message ${pendingMessage.telegram_message_id}`);

@@ -119,6 +119,76 @@ app.get('/health', (c) => {
   return c.json({ status: 'healthy' });
 });
 
+// ON-DEMAND: Download specific message media
+app.post('/download-media', async (c) => {
+  try {
+    const syncService = c.get('syncService');
+    const body = await c.req.json();
+    const { messageId, chatId } = body;
+    
+    if (!messageId || !chatId) {
+      return c.json({ 
+        success: false, 
+        error: 'messageId and chatId are required' 
+      }, 400);
+    }
+    
+    console.log(`[Processor] ON-DEMAND download request for message ${messageId} in chat ${chatId}`);
+    
+    // Fetch the specific message from DB
+    const message = await c.env.DB.prepare(`
+      SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
+      FROM messages 
+      WHERE telegram_message_id = ? AND chat_id = ?
+      LIMIT 1
+    `).bind(String(messageId), String(chatId)).first();
+    
+    if (!message) {
+      return c.json({ 
+        success: false, 
+        error: 'Message not found' 
+      }, 404);
+    }
+    
+    // Check if already completed
+    if (message.media_status === 'completed' && message.media_key) {
+      console.log(`[Processor] Message ${messageId} already completed, returning existing key`);
+      return c.json({
+        success: true,
+        alreadyCompleted: true,
+        mediaKey: message.media_key,
+        messageId: message.telegram_message_id
+      });
+    }
+    
+    // Process the media
+    console.log(`[Processor] Processing media for message ${messageId}`);
+    const result = await syncService.processMediaMessage(message);
+    
+    if (result.success) {
+      return c.json({
+        success: true,
+        mediaKey: result.mediaKey,
+        messageId: message.telegram_message_id,
+        chatId: message.chat_id
+      });
+    } else {
+      return c.json({
+        success: false,
+        error: result.error || 'Processing failed',
+        skipped: result.skipped,
+        skipReason: result.reason
+      }, 500);
+    }
+  } catch (error) {
+    console.error('[Processor] ON-DEMAND download error:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
 // Phase B: Media processing only
 app.post('/process-media', async (c) => {
   // 顺序处理标记，防止并发请求

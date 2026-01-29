@@ -4,7 +4,7 @@ import { useMessageStore } from '../store/messageStore';
 import { useChannelStore } from '../store/channelStore';
 import { useArchiver } from '../hooks/useArchiver';
 import ImageGalleryModal from './ImageGalleryModal';
-import { VIEWER_URL } from '../utils/api';
+import { VIEWER_URL, PROCESSOR_URL, internalFetch } from '../utils/api';
 
 const MessageGallery = () => {
   const { 
@@ -29,6 +29,7 @@ const MessageGallery = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [galleryModal, setGalleryModal] = useState({ isOpen: false, images: [], initialIndex: 0 });
   const [loadingMore, setLoadingMore] = useState(false);
+  const [downloadingMedia, setDownloadingMedia] = useState({}); // Track downloading state per message
 
   // Helper to get channel name by ID
   const getChannelName = (id) => {
@@ -164,6 +165,72 @@ const MessageGallery = () => {
       console.error('[MessageGallery] Error loading more messages:', error);
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  // ON-DEMAND: Download media for a specific message
+  const downloadMediaOnDemand = async (message) => {
+    const messageKey = `${message.chat_id}_${message.telegram_message_id}`;
+    
+    // Prevent duplicate requests
+    if (downloadingMedia[messageKey]) {
+      console.log(`[ON-DEMAND] Already downloading ${messageKey}`);
+      return;
+    }
+    
+    setDownloadingMedia(prev => ({ ...prev, [messageKey]: true }));
+    
+    try {
+      console.log(`[ON-DEMAND] Downloading media for message ${message.telegram_message_id}`);
+      
+      const response = await internalFetch(`${PROCESSOR_URL}/download-media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId: message.telegram_message_id,
+          chatId: message.chat_id
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`[ON-DEMAND] Download successful:`, data);
+        
+        // Update message store with new media_key
+        const { setMessages } = useMessageStore.getState();
+        const currentMessages = useMessageStore.getState().messages;
+        
+        const updatedMessages = currentMessages.map(msg => {
+          if (String(msg.telegram_message_id) === String(message.telegram_message_id) &&
+              String(msg.chat_id) === String(message.chat_id)) {
+            return {
+              ...msg,
+              media_status: 'completed',
+              media_key: data.mediaKey,
+              media_url: `${VIEWER_URL.replace('/api', '')}/r2/${data.mediaKey}`
+            };
+          }
+          return msg;
+        });
+        
+        setMessages(updatedMessages);
+        
+        // Refresh the display
+        await fetchMessages(50, true, selectedChannel.id);
+        
+        return data.mediaKey;
+      } else {
+        console.error(`[ON-DEMAND] Download failed:`, data.error);
+        alert(`下载失败: ${data.error || '未知错误'}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[ON-DEMAND] Download error:`, error);
+      alert(`下载出错: ${error.message}`);
+      return null;
+    } finally {
+      setDownloadingMedia(prev => ({ ...prev, [messageKey]: false }));
     }
   };
 
@@ -497,7 +564,23 @@ const MessageGallery = () => {
           </span>
         );
       case 'pending':
-        return renderMediaStatus('pending');
+        // ON-DEMAND: Show download button for pending media
+        const messageKey = `${msg.chat_id}_${msg.telegram_message_id}`;
+        const isDownloading = downloadingMedia[messageKey];
+        
+        return (
+          <button
+            onClick={() => downloadMediaOnDemand(msg)}
+            disabled={isDownloading}
+            className={`px-3 py-1 text-sm text-white rounded transition-colors ${
+              isDownloading 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            {isDownloading ? '⏳ 下载中...' : '📥 点击下载'}
+          </button>
+        );
       case 'processing':
         return renderMediaStatus('processing');
       case 'skipped_large':
