@@ -33,6 +33,7 @@ export const Dashboard = () => {
   } = useArchiver();
   
   const [activeTab, setActiveTab] = useState('channels');
+  const [hasInitialSynced, setHasInitialSynced] = useState(false);
   
   useEffect(() => {
     if (isLoggedIn) {
@@ -44,16 +45,31 @@ export const Dashboard = () => {
     initializeFromStorage();
   }, [channels, initializeFromStorage]);
 
-  // CRITICAL: Auto-sync 10 messages when entering Archive tab
+  // CRITICAL: Auto-sync 10 messages ONCE when entering Archive tab
   useEffect(() => {
-    if (activeTab === 'archive' && selectedChannel) {
-      console.log('[Dashboard] Switched to Archive tab, auto-syncing 10 messages for channel:', selectedChannel.id);
-      // First sync metadata (Phase A) for 10 messages
-      syncMessages();
-      // Then fetch the messages to display
-      fetchMessages(10, true, selectedChannel.id);
+    if (activeTab === 'archive' && selectedChannel && !hasInitialSynced) {
+      console.log('[Dashboard] First time entering Archive tab, auto-syncing 10 messages for channel:', selectedChannel.id);
+      
+      const doInitialSync = async () => {
+        try {
+          // First sync metadata (Phase A) for 10 messages
+          await syncMessages();
+          // Then fetch the messages to display
+          await fetchMessages(10, true, selectedChannel.id);
+          setHasInitialSynced(true);
+        } catch (error) {
+          console.error('[Dashboard] Initial sync failed:', error);
+        }
+      };
+      
+      doInitialSync();
     }
-  }, [activeTab, selectedChannel, syncMessages, fetchMessages]);
+  }, [activeTab, selectedChannel, hasInitialSynced]);
+  
+  // Reset sync flag when channel changes
+  useEffect(() => {
+    setHasInitialSynced(false);
+  }, [selectedChannel]);
   
   const handleSync = async () => {
     if (!selectedChannel) return;

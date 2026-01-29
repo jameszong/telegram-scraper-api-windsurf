@@ -177,72 +177,34 @@ export const useMessageStore = create(
   },
 
   phaseATextSync: async () => {
-    const maxBatches = 15; // Increased for faster text sync
-    let emptyBatches = 0;
-    let totalSynced = 0;
+    // CRITICAL FIX: Only sync ONE batch at a time (on-demand pagination)
+    // Each call to syncMessages() should only fetch the next batch of messages
+    set({ syncStatus: 'Phase A: Syncing next batch...' });
     
-    set({ syncStatus: 'Phase A: Syncing messages...' });
+    console.log(`[Phase A] Syncing single batch (on-demand)`);
     
-    for (let i = 0; i < maxBatches; i++) {
-      set({ 
-        syncProgress: i + 1, 
-        syncStatus: `Phase A: Syncing batch ${i + 1}/${maxBatches}...` 
-      });
+    const response = await authenticatedFetch(`${SCANNER_URL}/sync`, {
+      method: 'POST'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log(`[Phase A] Batch result: synced=${data.synced}, hasNewMessages=${data.hasNewMessages}, messages_returned=${data.messages?.length || 0}`);
       
-      console.log(`Debug: Phase A - Syncing batch ${i + 1}/${maxBatches}`);
-      
-      const response = await authenticatedFetch(`${SCANNER_URL}/sync`, {
-        method: 'POST'
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        totalSynced += data.synced || 0;
-        console.log(`Debug: Phase A - Batch ${i + 1} result: synced=${data.synced}, hasNewMessages=${data.hasNewMessages}, messages_returned=${data.messages?.length || 0}`);
-        
-        // IMMEDIATE UPDATE: Add new messages to state for instant visibility
-        if (data.messages && data.messages.length > 0) {
-          const { messages } = get();
-          const newMessages = [...data.messages, ...messages];
-          set({ messages: newMessages });
-          console.log(`Frontend: Phase A - Immediately updated UI with ${data.messages.length} new messages. Total: ${newMessages.length}`);
-        }
-        
-        // More resilient stopping logic
-        if (data.synced === 0) {
-          emptyBatches++;
-          console.log(`Debug: Phase A - Empty batch ${i + 1}, consecutive empty: ${emptyBatches}`);
-          
-          // Only stop after 2 consecutive empty batches
-          if (emptyBatches >= 2) {
-            console.log(`Debug: Phase A - Stopping after ${emptyBatches} consecutive empty batches`);
-            break;
-          }
-        } else {
-          emptyBatches = 0; // Reset counter on successful batch
-        }
-        
-        // Also stop if API explicitly says no more messages
-        if (!data.hasNewMessages) {
-          console.log(`Debug: Phase A - No more messages to sync (API confirmation), stopping at batch ${i + 1}`);
-          break;
-        }
-        
-        // Short cooldown for lightweight text sync
-        if (i < maxBatches - 1) {
-          const cooldown = data.suggestedCooldown || 500; // Short delay for text-only
-          console.log(`Debug: Phase A - Waiting ${cooldown}ms before next batch...`);
-          await new Promise(resolve => setTimeout(resolve, cooldown));
-        }
-      } else {
-        console.error(`Debug: Phase A - Batch ${i + 1} failed: ${data.error}`);
-        throw new Error(`Phase A sync failed: ${data.error}`);
+      // IMMEDIATE UPDATE: Add new messages to state for instant visibility
+      if (data.messages && data.messages.length > 0) {
+        const { messages } = get();
+        const newMessages = [...data.messages, ...messages];
+        set({ messages: newMessages });
+        console.log(`[Phase A] Updated UI with ${data.messages.length} new messages. Total: ${newMessages.length}`);
       }
+    } else {
+      console.error(`[Phase A] Sync failed: ${data.error}`);
+      throw new Error(`Phase A sync failed: ${data.error}`);
     }
     
-    // No need to refresh messages - we already updated them immediately during Phase A
-    console.log(`Debug: Phase A completed - Total synced: ${totalSynced}`);
+    console.log(`[Phase A] Single batch sync completed`);
   },
 
   phaseBMediaProcessing: async () => {

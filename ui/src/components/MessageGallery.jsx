@@ -151,10 +151,7 @@ const MessageGallery = () => {
     
     try {
       setLoadingMore(true);
-      // Sync next 10 messages first
-      const { syncMessages } = useMessageStore.getState();
-      await syncMessages();
-      // Then fetch them
+      // Just fetch next 10 messages from DB (they should already be synced)
       await fetchMessages(10, false, selectedChannel.id); // Append next 10
     } catch (error) {
       console.error('[MessageGallery] Error loading next page:', error);
@@ -489,26 +486,53 @@ const MessageGallery = () => {
           </button>
         );
       } else {
-        // Show processing status for the group - check any sibling for status
-        let statusToShow = null;
+        // Show download button for pending group - check any sibling for status
+        let hasPending = false;
+        let hasProcessing = false;
+        
         for (const sibling of siblingMessages) {
           if (sibling.media_group && Array.isArray(sibling.media_group)) {
             const firstPending = sibling.media_group.find(m => 
               m.media_status === 'pending' || m.media_status === 'processing'
             );
             if (firstPending) {
-              statusToShow = firstPending.media_status;
+              if (firstPending.media_status === 'pending') hasPending = true;
+              if (firstPending.media_status === 'processing') hasProcessing = true;
               break;
             }
-          } else if (sibling.media_status === 'pending' || sibling.media_status === 'processing') {
-            statusToShow = sibling.media_status;
+          } else if (sibling.media_status === 'pending') {
+            hasPending = true;
+            break;
+          } else if (sibling.media_status === 'processing') {
+            hasProcessing = true;
             break;
           }
         }
         
-        if (statusToShow) {
-          return renderMediaStatus(statusToShow);
+        // CRITICAL FIX: Show download button for pending groups
+        if (hasPending) {
+          const messageKey = `${msg.chat_id}_${msg.telegram_message_id}`;
+          const isDownloading = downloadingMedia[messageKey];
+          
+          return (
+            <button
+              onClick={() => downloadMediaOnDemand(msg)}
+              disabled={isDownloading}
+              className={`px-3 py-1 text-sm text-white rounded transition-colors ${
+                isDownloading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {isDownloading ? '⏳ 下载中...' : '📥 点击下载'}
+            </button>
+          );
         }
+        
+        if (hasProcessing) {
+          return renderMediaStatus('processing');
+        }
+        
         return <span className="text-gray-300 dark:text-gray-600">-</span>;
       }
     }
