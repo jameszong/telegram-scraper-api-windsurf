@@ -61,18 +61,9 @@ const MessageGallery = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
 
-  // Auto-trigger processing for pending media when messages change
-  useEffect(() => {
-    if (!messages || messages.length === 0 || !selectedChannel) return;
-    
-    // Check if any visible messages have pending media
-    const hasPendingMedia = messages.some(msg => msg.media_status === 'pending' && msg.media_type && msg.media_type !== '');
-    
-    if (hasPendingMedia && !isProcessing && !isSyncing) {
-      console.log('[MessageGallery] Detected pending media in visible messages, triggering targeted processing for channel:', selectedChannel.id);
-      triggerTargetedProcessing(selectedChannel.id);
-    }
-  }, [messages, isProcessing, isSyncing, selectedChannel, triggerTargetedProcessing]);
+  // REMOVED: Auto-trigger processing (ON-DEMAND architecture)
+  // Users must click "📥 点击下载" to download specific images
+  // No automatic batch processing to prevent FloodWait errors
 
   // Helper to render media status
   const renderMediaStatus = (status) => {
