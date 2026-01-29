@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { streamSSE } from 'hono/streaming';
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { TelegramAuthService } from './auth.js';
@@ -277,6 +278,194 @@ app.post('/sync', async (c) => {
   console.log(`Debug: Sync complete - synced: ${result.synced}, media: ${mediaCount}, suggestedCooldown: ${suggestedCooldown}ms`);
   
   return c.json(result);
+});
+
+// SSE: Streaming Batch Processing for real-time feedback
+app.get('/messages/batch-stream', async (c) => {
+  const idsParam = c.req.query('ids');
+  const chatId = c.req.query('chatId');
+  
+  if (!idsParam || !chatId) {
+    return c.json({ error: 'ids and chatId parameters required' }, 400);
+  }
+  
+  const messageIds = idsParam.split(',').map(id => id.trim()).filter(Boolean);
+  
+  if (messageIds.length === 0) {
+    return c.json({ error: 'No valid message IDs provided' }, 400);
+  }
+  
+  console.log(`[SSE] Starting batch stream for ${messageIds.length} messages in chat ${chatId}`);
+  
+  return streamSSE(c, async (stream) => {
+    const startTime = Date.now();
+    const TIME_BUDGET = 25000; // 25 seconds max
+    let processedCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    
+    try {
+      // Send initial event
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: 'start',
+          total: messageIds.length,
+          timestamp: Date.now()
+        })
+      });
+      
+      // Process each message
+      for (const messageId of messageIds) {
+        // Check time budget
+        const elapsed = Date.now() - startTime;
+        if (elapsed > TIME_BUDGET) {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'timeout',
+              processed: processedCount,
+              remaining: messageIds.length - processedCount,
+              elapsed
+            })
+          });
+          break;
+        }
+        
+        try {
+          // Fetch message from DB
+          const message = await c.env.DB.prepare(`
+            SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
+            FROM messages 
+            WHERE telegram_message_id = ? AND chat_id = ?
+            LIMIT 1
+          `).bind(String(messageId), String(chatId)).first();
+          
+          if (!message) {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'error',
+                messageId,
+                error: 'Message not found',
+                timestamp: Date.now()
+              })
+            });
+            failedCount++;
+            processedCount++;
+            continue;
+          }
+          
+          // Skip if already completed
+          if (message.media_status === 'completed' && message.media_key) {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'skip',
+                messageId,
+                reason: 'Already completed',
+                mediaKey: message.media_key,
+                timestamp: Date.now()
+              })
+            });
+            successCount++;
+            processedCount++;
+            continue;
+          }
+          
+          // Send processing event
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'processing',
+              messageId,
+              progress: processedCount + 1,
+              total: messageIds.length,
+              timestamp: Date.now()
+            })
+          });
+          
+          // Process the media using Processor service
+          // Note: We need to call the Processor worker here
+          const processorUrl = c.env.PROCESSOR_URL || 'http://localhost:8788';
+          const response = await fetch(`${processorUrl}/download-media`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Access-Key': c.env.ACCESS_KEY || ''
+            },
+            body: JSON.stringify({
+              messageId: message.telegram_message_id,
+              chatId: message.chat_id
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'completed',
+                messageId,
+                mediaKey: result.mediaKey,
+                progress: processedCount + 1,
+                total: messageIds.length,
+                timestamp: Date.now()
+              })
+            });
+            successCount++;
+          } else {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'failed',
+                messageId,
+                error: result.error || 'Unknown error',
+                skipped: result.skipped,
+                skipReason: result.skipReason,
+                timestamp: Date.now()
+              })
+            });
+            failedCount++;
+          }
+          
+          processedCount++;
+          
+          // Add small delay between requests (1 second)
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+        } catch (error) {
+          console.error(`[SSE] Error processing message ${messageId}:`, error);
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'error',
+              messageId,
+              error: error.message,
+              timestamp: Date.now()
+            })
+          });
+          failedCount++;
+          processedCount++;
+        }
+      }
+      
+      // Send completion event
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: 'complete',
+          processed: processedCount,
+          success: successCount,
+          failed: failedCount,
+          elapsed: Date.now() - startTime,
+          timestamp: Date.now()
+        })
+      });
+      
+    } catch (error) {
+      console.error('[SSE] Stream error:', error);
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: 'error',
+          error: error.message,
+          timestamp: Date.now()
+        })
+      });
+    }
+  });
 });
 
 // Media processing routes

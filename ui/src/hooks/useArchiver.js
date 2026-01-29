@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useCallback, useRef } from 'react';
 import { useMessageStore } from '../store/messageStore';
 import { useChannelStore } from '../store/channelStore';
-import { internalFetch, PROCESSOR_URL, VIEWER_URL } from '../utils/api';
+import { internalFetch, PROCESSOR_URL, VIEWER_URL, SCANNER_URL } from '../utils/api';
 
 // Group messages by grouped_id for album display
 const groupMessages = (messages) => {
@@ -280,6 +280,110 @@ export const useArchiver = () => {
     }
   }, [isProcessing, isSyncing, setMessages, setError, setProcessing, setLoading, setSyncing, internalFetch, PROCESSOR_URL, VIEWER_URL]);
 
+  // SSE: Streaming Batch Processing for real-time feedback
+  const processBatchStream = useCallback(async (messageIds, chatId) => {
+    if (!messageIds || messageIds.length === 0) {
+      console.log('[SSE] No message IDs provided');
+      return;
+    }
+
+    console.log(`[SSE] Starting batch stream for ${messageIds.length} messages`);
+    setProcessing(true);
+    setSyncing(`Starting batch download of ${messageIds.length} images...`);
+
+    const idsParam = messageIds.join(',');
+    const url = `${SCANNER_URL}/messages/batch-stream?ids=${idsParam}&chatId=${chatId}`;
+
+    try {
+      const eventSource = new EventSource(url);
+      let processedCount = 0;
+      let successCount = 0;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('[SSE] Event received:', data);
+
+          switch (data.type) {
+            case 'start':
+              setSyncing(`Starting download of ${data.total} images...`);
+              break;
+
+            case 'processing':
+              setSyncing(`Downloading ${data.progress}/${data.total}...`);
+              break;
+
+            case 'completed':
+            case 'skip':
+              // Immediately update message in store
+              const { messages: currentMessages, setMessages: storeSetMessages } = useMessageStore.getState();
+              const updatedMessages = currentMessages.map(msg => {
+                if (String(msg.telegram_message_id) === String(data.messageId)) {
+                  console.log(`[SSE] Live update: Message ${data.messageId} completed`);
+                  return {
+                    ...msg,
+                    media_status: 'completed',
+                    media_key: data.mediaKey,
+                    r2_key: data.mediaKey,
+                    media_url: `${VIEWER_URL.replace('/api', '')}/r2/${data.mediaKey}`
+                  };
+                }
+                return msg;
+              });
+              storeSetMessages(updatedMessages);
+              
+              processedCount++;
+              successCount++;
+              setSyncing(`Downloaded ${successCount}/${data.total} images...`);
+              break;
+
+            case 'failed':
+            case 'error':
+              processedCount++;
+              console.error(`[SSE] Failed to download message ${data.messageId}:`, data.error);
+              setSyncing(`Downloaded ${successCount}/${messageIds.length} images (${processedCount - successCount} failed)...`);
+              break;
+
+            case 'timeout':
+              setSyncing(`Timeout: Processed ${data.processed}/${messageIds.length} images`);
+              eventSource.close();
+              break;
+
+            case 'complete':
+              setSyncing(`Batch complete! Downloaded ${data.success}/${data.processed} images in ${(data.elapsed / 1000).toFixed(1)}s`);
+              eventSource.close();
+              
+              // Refresh messages to show updated state
+              setTimeout(async () => {
+                await fetchMessages(50, true, chatId);
+                setProcessing(false);
+              }, 1000);
+              break;
+          }
+        } catch (error) {
+          console.error('[SSE] Error parsing event:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('[SSE] EventSource error:', error);
+        setError('Stream connection error');
+        eventSource.close();
+        setProcessing(false);
+      };
+
+      // Cleanup on unmount
+      return () => {
+        eventSource.close();
+      };
+
+    } catch (error) {
+      console.error('[SSE] Error starting stream:', error);
+      setError(`Stream error: ${error.message}`);
+      setProcessing(false);
+    }
+  }, [setProcessing, setSyncing, setError, fetchMessages, SCANNER_URL, VIEWER_URL]);
+
   // Hook lifecycle logging
   console.log("[useArchiver] Hook initialized. ChannelId:", selectedChannel?.id, "Messages length:", messages.length);
 
@@ -393,6 +497,7 @@ export const useArchiver = () => {
     startSync,
     phaseASync,
     phaseBMediaProcessing,
+    processBatchStream, // SSE: Streaming batch processing
     triggerPendingMedia, // Expose for auto-trigger from components
     triggerTargetedProcessing // Expose for targeted processing with chatId
   };
