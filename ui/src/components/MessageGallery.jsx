@@ -167,7 +167,7 @@ const MessageGallery = () => {
     console.log('[MessageGallery] Previous page not implemented yet');
   };
 
-  // ON-DEMAND: Download media for a specific message
+  // ON-DEMAND: Download media for a specific message (handles grouped messages)
   const downloadMediaOnDemand = async (message) => {
     const messageKey = `${message.chat_id}_${message.telegram_message_id}`;
     
@@ -196,29 +196,57 @@ const MessageGallery = () => {
       if (data.success) {
         console.log(`[ON-DEMAND] Download successful:`, data);
         
-        // Update message store with new media_key
-        const { setMessages } = useMessageStore.getState();
-        const currentMessages = useMessageStore.getState().messages;
+        // CRITICAL FIX: Update message store WITHOUT refreshing/reordering
+        const { messages: currentMessages } = useMessageStore.getState();
         
-        const updatedMessages = currentMessages.map(msg => {
-          if (String(msg.telegram_message_id) === String(message.telegram_message_id) &&
-              String(msg.chat_id) === String(message.chat_id)) {
-            return {
-              ...msg,
-              media_status: 'completed',
-              media_key: data.mediaKey,
-              media_url: `${VIEWER_URL.replace('/api', '')}/r2/${data.mediaKey}`
-            };
-          }
-          return msg;
-        });
+        // Handle grouped messages - update all messages in the group
+        if (data.isGroup && data.results) {
+          console.log(`[ON-DEMAND] Updating ${data.results.length} messages in group`);
+          
+          const updatedMessages = currentMessages.map(msg => {
+            // Find matching result for this message
+            const result = data.results.find(r => 
+              String(r.messageId) === String(msg.telegram_message_id)
+            );
+            
+            if (result && result.success && result.mediaKey) {
+              return {
+                ...msg,
+                media_status: 'completed',
+                media_key: result.mediaKey,
+                media_url: `${VIEWER_URL}/media/${result.mediaKey}`
+              };
+            }
+            return msg;
+          });
+          
+          useMessageStore.setState({ messages: updatedMessages });
+          console.log(`[ON-DEMAND] Updated ${data.successCount} messages in UI (no refresh)`);
+          
+        } else {
+          // Single message update
+          const updatedMessages = currentMessages.map(msg => {
+            if (String(msg.telegram_message_id) === String(message.telegram_message_id) &&
+                String(msg.chat_id) === String(message.chat_id)) {
+              const result = data.results?.[0];
+              return {
+                ...msg,
+                media_status: 'completed',
+                media_key: result?.mediaKey || data.mediaKey,
+                media_url: `${VIEWER_URL}/media/${result?.mediaKey || data.mediaKey}`
+              };
+            }
+            return msg;
+          });
+          
+          useMessageStore.setState({ messages: updatedMessages });
+          console.log(`[ON-DEMAND] Updated single message in UI (no refresh)`);
+        }
         
-        setMessages(updatedMessages);
+        // NO REFRESH - UI updates automatically via state change
+        // This prevents list reordering and maintains scroll position
         
-        // Refresh the display
-        await fetchMessages(50, true, selectedChannel.id);
-        
-        return data.mediaKey;
+        return data;
       } else {
         console.error(`[ON-DEMAND] Download failed:`, data.error);
         alert(`下载失败: ${data.error || '未知错误'}`);

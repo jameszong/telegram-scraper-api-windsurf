@@ -119,7 +119,7 @@ app.get('/health', (c) => {
   return c.json({ status: 'healthy' });
 });
 
-// ON-DEMAND: Download specific message media
+// ON-DEMAND: Download specific message media (handles grouped messages)
 app.post('/download-media', async (c) => {
   try {
     const syncService = c.get('syncService');
@@ -150,36 +150,77 @@ app.post('/download-media', async (c) => {
       }, 404);
     }
     
-    // Check if already completed
-    if (message.media_status === 'completed' && message.media_key) {
-      console.log(`[Processor] Message ${messageId} already completed, returning existing key`);
-      return c.json({
-        success: true,
-        alreadyCompleted: true,
-        mediaKey: message.media_key,
-        messageId: message.telegram_message_id
-      });
+    // CRITICAL: If message has grouped_id, download ALL messages in the group
+    let messagesToProcess = [message];
+    
+    if (message.grouped_id) {
+      console.log(`[Processor] Message ${messageId} is part of group ${message.grouped_id}, fetching all siblings`);
+      
+      // Fetch all messages with the same grouped_id
+      const groupMessages = await c.env.DB.prepare(`
+        SELECT id, telegram_message_id, chat_id, text, date, media_status, media_type, media_key, grouped_id
+        FROM messages 
+        WHERE grouped_id = ? AND chat_id = ?
+        ORDER BY telegram_message_id ASC
+      `).bind(String(message.grouped_id), String(chatId)).all();
+      
+      if (groupMessages.results && groupMessages.results.length > 0) {
+        messagesToProcess = groupMessages.results;
+        console.log(`[Processor] Found ${messagesToProcess.length} messages in group ${message.grouped_id}`);
+      }
     }
     
-    // Process the media
-    console.log(`[Processor] Processing media for message ${messageId}`);
-    const result = await syncService.processMediaMessage(message);
+    // Process all messages in the group
+    const results = [];
+    let successCount = 0;
+    let alreadyCompletedCount = 0;
     
-    if (result.success) {
-      return c.json({
-        success: true,
-        mediaKey: result.mediaKey,
-        messageId: message.telegram_message_id,
-        chatId: message.chat_id
-      });
-    } else {
-      return c.json({
-        success: false,
-        error: result.error || 'Processing failed',
-        skipped: result.skipped,
-        skipReason: result.reason
-      }, 500);
+    for (const msg of messagesToProcess) {
+      // Skip if already completed
+      if (msg.media_status === 'completed' && msg.media_key) {
+        console.log(`[Processor] Message ${msg.telegram_message_id} already completed, skipping`);
+        alreadyCompletedCount++;
+        results.push({
+          messageId: msg.telegram_message_id,
+          alreadyCompleted: true,
+          mediaKey: msg.media_key
+        });
+        continue;
+      }
+      
+      // Process the media
+      console.log(`[Processor] Processing media for message ${msg.telegram_message_id}`);
+      const result = await syncService.processMediaMessage(msg);
+      
+      if (result.success) {
+        successCount++;
+        results.push({
+          messageId: msg.telegram_message_id,
+          success: true,
+          mediaKey: result.mediaKey
+        });
+      } else {
+        results.push({
+          messageId: msg.telegram_message_id,
+          success: false,
+          error: result.error,
+          skipped: result.skipped,
+          skipReason: result.reason
+        });
+      }
     }
+    
+    // Return summary
+    return c.json({
+      success: true,
+      isGroup: messagesToProcess.length > 1,
+      totalMessages: messagesToProcess.length,
+      successCount,
+      alreadyCompletedCount,
+      results,
+      grouped_id: message.grouped_id
+    });
+    
   } catch (error) {
     console.error('[Processor] ON-DEMAND download error:', error);
     return c.json({ 
