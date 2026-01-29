@@ -342,7 +342,8 @@ export class SyncService {
   async getArchivedMessages(channelId, limit = 50, offset = 0) {
     try {
       const messages = await this.env.DB.prepare(`
-        SELECT m.id, m.telegram_message_id, m.text, m.date, m.created_at, m.grouped_id,
+        SELECT m.id, m.telegram_message_id, m.chat_id, m.text, m.date, m.created_at, 
+               m.grouped_id, m.media_status, m.media_type, m.media_key,
                md.r2_key, md.file_type, md.mime_type
         FROM messages m
         LEFT JOIN media md ON m.id = md.message_id
@@ -350,6 +351,23 @@ export class SyncService {
         ORDER BY m.date DESC
         LIMIT ? OFFSET ?
       `).bind(channelId, limit, offset).all();
+
+      console.log(`[Scanner/Viewer] Fetched ${messages.results?.length || 0} messages for channel ${channelId}`);
+      
+      // Log first message to verify data structure
+      if (messages.results && messages.results.length > 0) {
+        const firstMsg = messages.results[0];
+        console.log(`[Scanner/Viewer] Sample message data:`, {
+          id: firstMsg.id,
+          telegram_message_id: firstMsg.telegram_message_id,
+          grouped_id: firstMsg.grouped_id,
+          grouped_id_type: typeof firstMsg.grouped_id,
+          media_status: firstMsg.media_status,
+          media_key: firstMsg.media_key,
+          r2_key: firstMsg.r2_key,
+          has_media_key: !!(firstMsg.media_key || firstMsg.r2_key)
+        });
+      }
 
       return {
         success: true,

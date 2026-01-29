@@ -310,6 +310,17 @@ export class ProcessorSyncService {
       // CRITICAL: Use telegram_message_id AND chat_id as unique key
       const msgIdStr = String(pendingMessage.telegram_message_id);
       const chatIdStr = String(pendingMessage.chat_id);
+      const groupedIdStr = pendingMessage.grouped_id ? String(pendingMessage.grouped_id) : null;
+
+      // Log exactly what we're writing to DB
+      console.log(`[Processor] DB UPDATE params:`, {
+        media_key: key,
+        media_status: 'completed',
+        telegram_message_id: msgIdStr,
+        chat_id: chatIdStr,
+        grouped_id: groupedIdStr,
+        grouped_id_type: typeof groupedIdStr
+      });
 
       const result = await this.env.DB.prepare(`
         UPDATE messages 
@@ -317,7 +328,7 @@ export class ProcessorSyncService {
         WHERE telegram_message_id = ? AND chat_id = ?
       `).bind(key, msgIdStr, chatIdStr).run();
 
-      console.log(`[Persistence] Updated Msg ${msgIdStr}: changes=${result.meta.changes}`);
+      console.log(`[Persistence] Updated Msg ${msgIdStr}: changes=${result.meta.changes}, grouped_id=${groupedIdStr}`);
 
       // CRITICAL: If changes === 0, throw explicit error
       if (result.meta.changes === 0) {

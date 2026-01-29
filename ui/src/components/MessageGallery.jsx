@@ -182,6 +182,45 @@ const MessageGallery = () => {
     
     console.log(`[Gallery Debug] Searching in ${allMessages.length} total messages for GroupID: ${message.grouped_id}`);
     
+    // STRICT FIELD INSPECTION: Validate data quality
+    const dataValidation = {
+      totalMessages: allMessages.length,
+      messagesWithGroupId: 0,
+      messagesWithMediaKey: 0,
+      messagesCompleted: 0,
+      messagesPending: 0,
+      missingFields: []
+    };
+    
+    allMessages.forEach((msg, idx) => {
+      if (msg.grouped_id) dataValidation.messagesWithGroupId++;
+      if (msg.media_key || msg.r2_key) dataValidation.messagesWithMediaKey++;
+      if (msg.media_status === 'completed') dataValidation.messagesCompleted++;
+      if (msg.media_status === 'pending') dataValidation.messagesPending++;
+      
+      // Alert on missing critical fields
+      if (idx < 5 && msg.grouped_id && msg.media_status === 'completed' && !msg.media_key && !msg.r2_key) {
+        console.warn(`[Data Alert] Msg ${msg.telegram_message_id} marked completed but NO media_key!`, {
+          media_status: msg.media_status,
+          media_key: msg.media_key,
+          r2_key: msg.r2_key,
+          grouped_id: msg.grouped_id,
+          allKeys: Object.keys(msg)
+        });
+        dataValidation.missingFields.push(msg.telegram_message_id);
+      }
+      
+      // Type check grouped_id
+      if (idx < 5 && msg.grouped_id && typeof msg.grouped_id !== 'string') {
+        console.warn(`[Type Alert] Msg ${msg.telegram_message_id} grouped_id is not String:`, {
+          grouped_id: msg.grouped_id,
+          type: typeof msg.grouped_id
+        });
+      }
+    });
+    
+    console.log(`[Gallery Debug] Data Validation:`, dataValidation);
+    
     // Check if this message has a grouped_id (Telegram album)
     if (message.grouped_id) {
       // CRITICAL FIX: Force String comparison to defend against BigInt precision loss
