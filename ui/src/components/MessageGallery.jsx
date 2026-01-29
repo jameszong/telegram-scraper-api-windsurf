@@ -209,7 +209,8 @@ const MessageGallery = () => {
               String(r.messageId) === String(msg.telegram_message_id)
             );
             
-            if (result && result.success && result.mediaKey) {
+            // Update if result exists (either new download or already completed)
+            if (result && result.mediaKey) {
               return {
                 ...msg,
                 media_status: 'completed',
@@ -221,7 +222,7 @@ const MessageGallery = () => {
           });
           
           useMessageStore.setState({ messages: updatedMessages });
-          console.log(`[ON-DEMAND] Updated ${data.successCount} messages in UI (no refresh)`);
+          console.log(`[ON-DEMAND] Updated ${data.totalMessages} messages in UI (${data.successCount} new, ${data.alreadyCompletedCount} already completed)`);
           
         } else {
           // Single message update
@@ -229,11 +230,12 @@ const MessageGallery = () => {
             if (String(msg.telegram_message_id) === String(message.telegram_message_id) &&
                 String(msg.chat_id) === String(message.chat_id)) {
               const result = data.results?.[0];
+              const mediaKey = result?.mediaKey || data.mediaKey;
               return {
                 ...msg,
                 media_status: 'completed',
-                media_key: result?.mediaKey || data.mediaKey,
-                media_url: `${VIEWER_URL}/media/${result?.mediaKey || data.mediaKey}`
+                media_key: mediaKey,
+                media_url: `${VIEWER_URL}/media/${mediaKey}`
               };
             }
             return msg;

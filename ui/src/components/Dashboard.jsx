@@ -45,17 +45,15 @@ export const Dashboard = () => {
     initializeFromStorage();
   }, [channels, initializeFromStorage]);
 
-  // CRITICAL: Auto-sync 10 messages ONCE when entering Archive tab
+  // CRITICAL: Auto-sync and fetch messages ONCE when entering Archive tab
   useEffect(() => {
     if (activeTab === 'archive' && selectedChannel && !hasInitialSynced) {
-      console.log('[Dashboard] First time entering Archive tab, auto-syncing 10 messages for channel:', selectedChannel.id);
+      console.log('[Dashboard] First time entering Archive tab, auto-syncing for channel:', selectedChannel.id);
       
       const doInitialSync = async () => {
         try {
-          // First sync metadata (Phase A) for 10 messages
+          // Sync metadata (Phase A) - this will also call fetchMessages internally
           await syncMessages();
-          // Then fetch the messages to display
-          await fetchMessages(10, true, selectedChannel.id);
           setHasInitialSynced(true);
         } catch (error) {
           console.error('[Dashboard] Initial sync failed:', error);
@@ -64,7 +62,7 @@ export const Dashboard = () => {
       
       doInitialSync();
     }
-  }, [activeTab, selectedChannel, hasInitialSynced]);
+  }, [activeTab, selectedChannel, hasInitialSynced, syncMessages]);
   
   // Reset sync flag when channel changes
   useEffect(() => {

@@ -157,9 +157,9 @@ export const useMessageStore = create(
       // REMOVED: Phase B auto-processing (now on-demand via user clicks)
       // Users will click "📥 点击下载" to download specific images
       
-      // Final refresh to show synced messages
+      // Final refresh to show synced messages (10 per page for on-demand)
       const { fetchMessages } = get();
-      await fetchMessages(50, true);
+      await fetchMessages(10, true);
       
       set({ 
         isSyncing: false, 
